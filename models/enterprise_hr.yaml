@@ -1,0 +1,716 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Enterprise HR Semantic Model
+# Domain layer: Human Resources
+#
+# Depends on: enterprise_core.yaml
+#   - employee.party_id           -> core.party.party_id
+#   - employee.legal_entity_id    -> core.legal_entity.legal_entity_id
+#   - payroll_record.legal_entity_id -> core.legal_entity.legal_entity_id
+#
+# Cross-file relationships are encoded in ai_context. Load enterprise_core.yaml
+# alongside this file to resolve them in tools that support multi-file loading.
+#
+# OOP inheritance:
+#   Employee extends Party — holds role-specific fields only.
+#   Join employee.party_id = core.party.party_id to get name and contact info.
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_hr
+    description: >
+      Human Resources domain model covering the full employee lifecycle:
+      workforce structure (departments, jobs, positions), employee records,
+      org assignments, and payroll summaries. Employees extend the core Party
+      entity via party_id.
+    ai_context:
+      instructions: >
+        This model covers HR analytics. To get employee names and contact
+        details, join employee.party_id to enterprise_core.party.party_id.
+        To get legal entity details, join employee.legal_entity_id to
+        enterprise_core.legal_entity.legal_entity_id.
+
+        Key relationships:
+          employee -> department (via employee_assignment.department_id)
+          employee -> position   (via employee_assignment.position_id)
+          position -> job        (via position.job_id)
+          payroll_record -> employee
+
+        Use employee_assignment to traverse the org chart. The
+        manager_employee_id self-reference enables hierarchy queries.
+        Load enterprise_core.yaml with this file for full entity resolution.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # EMPLOYEE — extends core Party with HR-specific attributes
+      # -----------------------------------------------------------------------
+      - name: employee
+        source: enterprise.hr.employee
+        primary_key: [employee_id]
+        unique_keys:
+          - [employee_id]
+          - [employee_number]
+          - [party_id]
+        description: >
+          An individual employed by (or contracted to) the enterprise. Extends
+          the core Party entity — all name, address, and contact information
+          is stored in enterprise_core.party and enterprise_core.contact_point.
+          This dataset holds only HR-specific role attributes.
+        ai_context:
+          synonyms:
+            - "staff"
+            - "worker"
+            - "headcount"
+            - "personnel"
+        fields:
+          - name: employee_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: employee_id
+            description: Surrogate primary key for the employee record.
+            dimension:
+              is_time: false
+
+          - name: party_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_id
+            description: >
+              Foreign key to enterprise_core.party. Join here to get the
+              employee's name, address, and contact information.
+            dimension:
+              is_time: false
+
+          - name: legal_entity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: legal_entity_id
+            description: Foreign key to enterprise_core.legal_entity. Identifies which legal entity employs this person.
+            dimension:
+              is_time: false
+
+          - name: employee_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: employee_number
+            description: Human-readable business key assigned by HR (e.g., 'EMP-00412').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "EID"
+                - "employee ID"
+                - "staff number"
+
+          - name: hire_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: hire_date
+            description: Date the employee started employment with the enterprise.
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "start date"
+                - "joining date"
+                - "date of hire"
+
+          - name: termination_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: termination_date
+            description: Date employment ended. NULL for currently active employees.
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "end date"
+                - "separation date"
+                - "last day"
+
+          - name: employment_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: employment_type
+            description: >
+              Nature of the employment arrangement.
+              Values: full-time, part-time, contractor, intern, temporary.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "worker type"
+                - "employment classification"
+
+          - name: employment_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: employment_status
+            description: >
+              Current employment status.
+              Values: active, on-leave, terminated, retired, suspended.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "status"
+                - "active status"
+
+      # -----------------------------------------------------------------------
+      # DEPARTMENT — organizational unit
+      # -----------------------------------------------------------------------
+      - name: department
+        source: enterprise.hr.department
+        primary_key: [department_id]
+        unique_keys:
+          - [department_id]
+          - [department_code]
+        description: >
+          An organizational unit within the enterprise. Departments are
+          hierarchical via parent_department_id and are used for headcount
+          reporting, budget allocation, and org chart navigation.
+        ai_context:
+          synonyms:
+            - "org unit"
+            - "team"
+            - "division"
+            - "function"
+        fields:
+          - name: department_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: department_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: department_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: department_name
+            description: Display name of the department.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "department"
+                - "team name"
+
+          - name: department_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: department_code
+            description: Unique short code used in GL and reporting (e.g., 'ENG', 'FIN', 'SALES').
+            dimension:
+              is_time: false
+
+          - name: parent_department_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: parent_department_id
+            description: References department_id of the parent department. NULL for top-level departments.
+            dimension:
+              is_time: false
+
+          - name: cost_center_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: cost_center_id
+            description: >
+              Foreign key to enterprise_finance.cost_center. Links the
+              department to its financial cost center for budget and GL reporting.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # JOB — job classification / role definition
+      # -----------------------------------------------------------------------
+      - name: job
+        source: enterprise.hr.job
+        primary_key: [job_id]
+        unique_keys:
+          - [job_id]
+          - [job_code]
+        description: >
+          A job classification that defines the type of work, skill family, and
+          grade band. Multiple positions can share the same job. Used for
+          compensation benchmarking and workforce planning.
+        ai_context:
+          synonyms:
+            - "role"
+            - "job title"
+            - "job code"
+        fields:
+          - name: job_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: job_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: job_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: job_code
+            description: Unique code identifying the job (e.g., 'SWE-III', 'MGR-SR').
+            dimension:
+              is_time: false
+
+          - name: job_title
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: job_title
+            description: Standard job title (e.g., 'Senior Software Engineer', 'Account Executive').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "title"
+                - "position title"
+
+          - name: job_family
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: job_family
+            description: Grouping of related jobs by function (e.g., 'Engineering', 'Sales', 'Finance').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "job function"
+                - "career track"
+
+          - name: job_grade
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: job_grade
+            description: Compensation grade or band associated with this job (e.g., 'L4', 'Band 6').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "grade"
+                - "level"
+                - "band"
+
+      # -----------------------------------------------------------------------
+      # POSITION — a specific funded role within a department
+      # -----------------------------------------------------------------------
+      - name: position
+        source: enterprise.hr.position
+        primary_key: [position_id]
+        unique_keys:
+          - [position_id]
+          - [position_code]
+        description: >
+          A specific, funded role within a department that can be filled by an
+          employee. Positions reference a job for classification. A position may
+          be vacant (no current employee_assignment) or filled by one employee.
+        ai_context:
+          synonyms:
+            - "headcount slot"
+            - "open role"
+            - "vacancy"
+        fields:
+          - name: position_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: position_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: position_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: position_code
+            description: Unique code identifying this position (e.g., 'POS-0291').
+            dimension:
+              is_time: false
+
+          - name: position_title
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: position_title
+            description: Working title for this specific position, which may differ from the job title.
+            dimension:
+              is_time: false
+
+          - name: department_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: department_id
+            description: Foreign key to department. The department that owns this position.
+            dimension:
+              is_time: false
+
+          - name: job_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: job_id
+            description: Foreign key to job. Defines the classification, grade, and job family for this position.
+            dimension:
+              is_time: false
+
+          - name: headcount_budget
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: headcount_budget
+            description: Number of headcount slots approved for this position (typically 1).
+
+      # -----------------------------------------------------------------------
+      # EMPLOYEE_ASSIGNMENT — links employee to position, department, manager
+      # -----------------------------------------------------------------------
+      - name: employee_assignment
+        source: enterprise.hr.employee_assignment
+        primary_key: [assignment_id]
+        unique_keys:
+          - [assignment_id]
+        description: >
+          Records the assignment of an employee to a position and department,
+          including their reporting manager and the effective date range. An
+          employee may have multiple assignments over time (history) or
+          simultaneously (e.g., primary + secondary role). Use is_primary = TRUE
+          to get the current primary assignment.
+        ai_context:
+          synonyms:
+            - "org assignment"
+            - "reporting line"
+            - "position assignment"
+        fields:
+          - name: assignment_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: assignment_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: employee_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: employee_id
+            description: Foreign key to employee.
+            dimension:
+              is_time: false
+
+          - name: position_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: position_id
+            description: Foreign key to position. The role the employee is filling.
+            dimension:
+              is_time: false
+
+          - name: department_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: department_id
+            description: Foreign key to department. The org unit to which the employee is assigned.
+            dimension:
+              is_time: false
+
+          - name: manager_employee_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: manager_employee_id
+            description: Self-referencing foreign key to employee. The direct reporting manager. NULL for the top of the org chart.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "manager"
+                - "direct manager"
+                - "supervisor"
+
+          - name: start_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: start_date
+            description: Date this assignment became effective.
+            dimension:
+              is_time: true
+
+          - name: end_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: end_date
+            description: Date this assignment ended. NULL for the current active assignment.
+            dimension:
+              is_time: true
+
+          - name: is_primary
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: is_primary
+            description: TRUE if this is the employee's primary (main) assignment.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # PAYROLL_RECORD — period-level pay summary per employee
+      # -----------------------------------------------------------------------
+      - name: payroll_record
+        source: enterprise.hr.payroll_record
+        primary_key: [payroll_id]
+        unique_keys:
+          - [payroll_id]
+          - [employee_id, period_start, period_end]
+        description: >
+          Summarized payroll record per employee per pay period. Intentionally
+          minimal — contains only universally applicable gross/net figures.
+          Detailed deductions, tax breakdowns, and benefit elections should be
+          added as extensions or supplemental datasets.
+        ai_context:
+          synonyms:
+            - "pay"
+            - "salary"
+            - "compensation"
+            - "wages"
+        fields:
+          - name: payroll_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: payroll_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: employee_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: employee_id
+            description: Foreign key to employee.
+            dimension:
+              is_time: false
+
+          - name: legal_entity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: legal_entity_id
+            description: Foreign key to enterprise_core.legal_entity. The legal entity processing this payroll.
+            dimension:
+              is_time: false
+
+          - name: period_start
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: period_start
+            description: First date of the pay period (ISO 8601 date).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "pay period start"
+
+          - name: period_end
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: period_end
+            description: Last date of the pay period (ISO 8601 date).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "pay period end"
+
+          - name: gross_pay
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: gross_pay
+            description: Total gross compensation before deductions, in currency_code.
+            ai_context:
+              synonyms:
+                - "gross salary"
+                - "gross wages"
+                - "total compensation"
+
+          - name: net_pay
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: net_pay
+            description: Take-home pay after all deductions, in currency_code.
+            ai_context:
+              synonyms:
+                - "net salary"
+                - "take-home pay"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for gross_pay and net_pay amounts.
+            dimension:
+              is_time: false
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: assignment_to_employee
+        from: employee_assignment
+        to: employee
+        from_columns: [employee_id]
+        to_columns: [employee_id]
+        ai_context:
+          synonyms:
+            - "employee assignment"
+
+      - name: assignment_to_position
+        from: employee_assignment
+        to: position
+        from_columns: [position_id]
+        to_columns: [position_id]
+        ai_context:
+          synonyms:
+            - "fills position"
+
+      - name: assignment_to_department
+        from: employee_assignment
+        to: department
+        from_columns: [department_id]
+        to_columns: [department_id]
+        ai_context:
+          synonyms:
+            - "assigned to department"
+
+      - name: assignment_manager_to_employee
+        from: employee_assignment
+        to: employee
+        from_columns: [manager_employee_id]
+        to_columns: [employee_id]
+        ai_context:
+          synonyms:
+            - "reports to"
+            - "direct manager"
+
+      - name: position_to_department
+        from: position
+        to: department
+        from_columns: [department_id]
+        to_columns: [department_id]
+        ai_context:
+          synonyms:
+            - "position in department"
+
+      - name: position_to_job
+        from: position
+        to: job
+        from_columns: [job_id]
+        to_columns: [job_id]
+        ai_context:
+          synonyms:
+            - "position job classification"
+
+      - name: payroll_to_employee
+        from: payroll_record
+        to: employee
+        from_columns: [employee_id]
+        to_columns: [employee_id]
+        ai_context:
+          synonyms:
+            - "employee pay"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: headcount
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(DISTINCT employee.employee_id)
+        description: Total number of distinct employees. Filter by employment_status = 'active' for current headcount.
+        ai_context:
+          synonyms:
+            - "employee count"
+            - "staff count"
+            - "FTE count"
+            - "workforce size"
+
+      - name: avg_tenure_days
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                AVG(
+                  CASE
+                    WHEN employee.termination_date IS NULL
+                      THEN CURRENT_DATE - employee.hire_date
+                    ELSE employee.termination_date - employee.hire_date
+                  END
+                )
+        description: Average number of days employees have been (or were) employed.
+        ai_context:
+          synonyms:
+            - "average tenure"
+            - "average length of service"
+
+      - name: total_payroll_cost
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(payroll_record.gross_pay)
+        description: Total gross payroll cost across all employees and periods in scope.
+        ai_context:
+          synonyms:
+            - "payroll"
+            - "total wages"
+            - "total salary cost"
+            - "labor cost"
+
+      - name: avg_gross_pay_per_employee
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(payroll_record.gross_pay) / NULLIF(COUNT(DISTINCT payroll_record.employee_id), 0)
+        description: Average gross pay per employee across periods in scope.
+        ai_context:
+          synonyms:
+            - "average salary"
+            - "average compensation"
+            - "average pay"

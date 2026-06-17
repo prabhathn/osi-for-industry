@@ -1,0 +1,369 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Add-on: Loyalty Programme
+# Module: Points-based loyalty tracking — members, balances, and transactions.
+#
+# This module is NOT universal — include it for enterprises that run a
+# customer loyalty or rewards programme (retail, hospitality, consumer SaaS).
+#
+# Depends on: enterprise_core.yaml
+#   - loyalty_account.party_id  -> core.party.party_id
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_addon_loyalty
+    description: >
+      Add-on module for points-based loyalty programmes. Covers the programme
+      definition, member accounts with point balances and tier status, and the
+      individual earn/redeem/expire transactions that move points. Applicable
+      to retail, hospitality, and any consumer-facing programme.
+    ai_context:
+      instructions: >
+        Use this model to analyse loyalty programme health: member counts,
+        points liability, tier distribution, and redemption patterns.
+
+        Data hierarchy:
+          loyalty_programme -> loyalty_account (members per programme)
+          loyalty_account -> loyalty_transaction (point movements)
+
+        loyalty_account.party_id references enterprise_core.party (cross-file).
+        Load enterprise_core.yaml to resolve member names and demographics.
+
+        loyalty_transaction.txn_type values: earn, redeem, expire, adjust.
+        loyalty_account.tier_code is implementation-defined (e.g., Bronze/Silver/Gold).
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # LOYALTY_PROGRAMME — a named rewards scheme
+      # -----------------------------------------------------------------------
+      - name: loyalty_programme
+        source: enterprise.loyalty.loyalty_programme
+        primary_key: [programme_id]
+        unique_keys:
+          - [programme_id]
+          - [programme_code]
+        description: >
+          A named customer rewards scheme. An enterprise may run multiple
+          programmes (e.g., one for retail, one for hospitality), each with its
+          own points currency.
+        ai_context:
+          synonyms:
+            - "rewards programme"
+            - "points scheme"
+            - "loyalty scheme"
+        fields:
+          - name: programme_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: programme_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: programme_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: programme_code
+            description: Unique short identifier for the programme (e.g., 'REWARDS', 'GOLD_CLUB').
+            dimension:
+              is_time: false
+
+          - name: programme_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: programme_name
+            description: Full display name of the programme.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "scheme name"
+                - "rewards name"
+
+          - name: points_currency_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: points_currency_name
+            description: Display name for the points unit (e.g., 'Points', 'Miles', 'Stars', 'Credits').
+            dimension:
+              is_time: false
+
+          - name: is_active
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: is_active
+            description: Whether the programme is currently open to new members and earning (true/false).
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # LOYALTY_ACCOUNT — a member's account in a programme
+      # -----------------------------------------------------------------------
+      - name: loyalty_account
+        source: enterprise.loyalty.loyalty_account
+        primary_key: [account_id]
+        unique_keys:
+          - [account_id]
+          - [programme_id, party_id]
+        description: >
+          A single member's participation record within a loyalty programme.
+          Holds the current point balance, tier status, and enrolment date.
+        ai_context:
+          synonyms:
+            - "member account"
+            - "rewards account"
+            - "loyalty membership"
+        fields:
+          - name: account_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: account_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: party_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_id
+            description: Foreign key to enterprise_core.party (cross-file). The loyalty programme member.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "member"
+                - "customer"
+
+          - name: programme_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: programme_id
+            description: Foreign key to loyalty_programme. The programme this account belongs to.
+            dimension:
+              is_time: false
+
+          - name: enrolled_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: enrolled_date
+            description: Date the member joined the programme (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "join date"
+                - "enrolment date"
+                - "sign-up date"
+
+          - name: points_balance
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: points_balance
+            description: Current redeemable point balance. Does not include expired or pending points.
+            ai_context:
+              synonyms:
+                - "balance"
+                - "available points"
+                - "remaining points"
+
+          - name: tier_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: tier_code
+            description: Current membership tier (e.g., Bronze, Silver, Gold, Platinum). Implementation-defined.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "status tier"
+                - "membership level"
+                - "tier"
+
+          - name: tier_since_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: tier_since_date
+            description: Date the member reached their current tier (ISO 8601).
+            dimension:
+              is_time: true
+
+          - name: account_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: account_status
+            description: >
+              Current membership status.
+              Values: active, suspended, closed.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # LOYALTY_TRANSACTION — a single point movement on an account
+      # -----------------------------------------------------------------------
+      - name: loyalty_transaction
+        source: enterprise.loyalty.loyalty_transaction
+        primary_key: [txn_id]
+        unique_keys:
+          - [txn_id]
+        description: >
+          Records each points movement on a loyalty account: earning points from
+          a purchase, redeeming against a reward, expiry run, or manual adjustment.
+        ai_context:
+          synonyms:
+            - "points transaction"
+            - "point movement"
+            - "earn transaction"
+            - "redemption"
+        fields:
+          - name: txn_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: txn_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: account_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: account_id
+            description: Foreign key to loyalty_account. The member account this transaction applies to.
+            dimension:
+              is_time: false
+
+          - name: txn_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: txn_type
+            description: >
+              Type of point movement.
+              Values: earn, redeem, expire, adjust.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "transaction type"
+                - "movement type"
+
+          - name: points
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: points
+            description: Points involved in this transaction. Positive for earn/adjust-up; negative for redeem/expire.
+            ai_context:
+              synonyms:
+                - "point amount"
+                - "points earned"
+                - "points redeemed"
+
+          - name: reference_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: reference_id
+            description: Identifier of the triggering event (e.g., sales order ID, redemption voucher ID). Optional.
+            dimension:
+              is_time: false
+
+          - name: txn_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: txn_date
+            description: Date and time the transaction was recorded (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "transaction date"
+                - "activity date"
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: account_to_programme
+        from: loyalty_account
+        to: loyalty_programme
+        from_columns: [programme_id]
+        to_columns: [programme_id]
+        ai_context:
+          synonyms:
+            - "account belongs to programme"
+
+      - name: transaction_to_account
+        from: loyalty_transaction
+        to: loyalty_account
+        from_columns: [account_id]
+        to_columns: [account_id]
+        ai_context:
+          synonyms:
+            - "transaction on account"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: total_active_members
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(CASE WHEN loyalty_account.account_status = 'active' THEN 1 END)
+        description: Number of loyalty accounts currently in active status.
+        ai_context:
+          synonyms:
+            - "active members"
+            - "enrolled members"
+            - "live members"
+
+      - name: points_liability
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(CASE WHEN loyalty_account.account_status = 'active'
+                         THEN loyalty_account.points_balance ELSE 0 END)
+        description: Total outstanding redeemable points across all active accounts. Represents the programme's unredeemed liability.
+        ai_context:
+          synonyms:
+            - "outstanding points"
+            - "unredeemed points"
+            - "points balance total"
+
+      - name: redemption_rate
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(CASE WHEN loyalty_transaction.txn_type = 'redeem'
+                         THEN ABS(loyalty_transaction.points) ELSE 0 END)
+                * 100.0
+                / NULLIF(
+                    SUM(CASE WHEN loyalty_transaction.txn_type = 'earn'
+                             THEN loyalty_transaction.points ELSE 0 END), 0)
+        description: Percentage of earned points that have been redeemed. Higher rates indicate strong member engagement.
+        ai_context:
+          synonyms:
+            - "redeem rate"
+            - "point utilisation"
+            - "breakage inverse"

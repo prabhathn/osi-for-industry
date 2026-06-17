@@ -1,0 +1,568 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Vertical: Hospitality — Reservations
+# Module: Room types, rate plans, reservations, and stay records.
+#
+# This is the single most critical gap for any hotel or hospitality operator.
+# Covers the pre-arrival (reservation) and post-departure (stay record) lifecycle.
+#
+# Depends on:
+#   - addon_sites.yaml       (reservation.site_id -> site.site_id)
+#   - enterprise_core.yaml   (reservation.party_id -> party.party_id)
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_vertical_hospitality_reservations
+    description: >
+      Vertical module for hotels and hospitality operators. Defines the
+      accommodation product (room types and rate plans), the guest reservation
+      lifecycle, and the actual stay record with billing totals. Supports
+      occupancy, ADR, and RevPAR calculations — the three core KPIs for
+      any hospitality business.
+    ai_context:
+      instructions: >
+        Use this model for hospitality revenue analytics: occupancy, average
+        daily rate (ADR), and revenue per available room (RevPAR).
+
+        Data hierarchy:
+          room_type (what's being sold) and rate_plan (how it's priced)
+          reservation -> stay_record (one reservation, one completed stay)
+
+        reservation.site_id references addon_sites.site (cross-file).
+        reservation.party_id references enterprise_core.party (cross-file).
+        reservation.room_type_id references room_type.type_id.
+        reservation.rate_plan_id references rate_plan.plan_id.
+
+        reservation.status values: confirmed, cancelled, no-show, checked-in, checked-out.
+        rate_plan.plan_type values: standard, promotional, corporate, package.
+
+        RevPAR = total room revenue / total available room-nights.
+        ADR = total room revenue / total occupied room-nights.
+        Occupancy rate = occupied room-nights / available room-nights.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # ROOM_TYPE — a category of accommodation product at a site
+      # -----------------------------------------------------------------------
+      - name: room_type
+        source: enterprise.hospitality.room_type
+        primary_key: [type_id]
+        unique_keys:
+          - [type_id]
+          - [site_id, type_code]
+        description: >
+          A named category of accommodation at a property (e.g., Standard King,
+          Deluxe Twin, Junior Suite). Defines the base rate, capacity, and
+          available inventory at each site.
+        ai_context:
+          synonyms:
+            - "room category"
+            - "accommodation type"
+            - "room class"
+        fields:
+          - name: type_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: type_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: site_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: site_id
+            description: Foreign key to addon_sites.site (cross-file). The property where this room type exists.
+            dimension:
+              is_time: false
+
+          - name: type_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: type_code
+            description: Short code for the room type (e.g., 'STD-K', 'DLX-T', 'STE-JR').
+            dimension:
+              is_time: false
+
+          - name: type_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: type_name
+            description: Full display name of the room type (e.g., 'Standard King', 'Junior Suite').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "room name"
+                - "accommodation name"
+
+          - name: max_occupancy
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: max_occupancy
+            description: Maximum number of guests permitted in this room type.
+            ai_context:
+              synonyms:
+                - "max guests"
+                - "capacity"
+
+          - name: total_units
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: total_units
+            description: Total number of rooms of this type available at the site. Used to compute available room-nights.
+            ai_context:
+              synonyms:
+                - "room count"
+                - "inventory"
+                - "number of rooms"
+
+          - name: base_rate
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: base_rate
+            description: Default nightly rate for this room type before rate plan adjustments.
+            ai_context:
+              synonyms:
+                - "rack rate"
+                - "standard rate"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for rates at this property.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # RATE_PLAN — a pricing and policy configuration for reservations
+      # -----------------------------------------------------------------------
+      - name: rate_plan
+        source: enterprise.hospitality.rate_plan
+        primary_key: [plan_id]
+        unique_keys:
+          - [plan_id]
+          - [plan_code]
+        description: >
+          A named pricing arrangement defining how the room rate is set and what
+          cancellation terms apply (e.g., Best Available Rate, Non-Refundable,
+          Corporate Contract, Breakfast Package).
+        ai_context:
+          synonyms:
+            - "rate"
+            - "pricing plan"
+            - "fare"
+            - "package"
+        fields:
+          - name: plan_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: plan_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: plan_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: plan_code
+            description: Short identifier for the rate plan (e.g., 'BAR', 'CORP-ABC', 'NR-PKG').
+            dimension:
+              is_time: false
+
+          - name: plan_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: plan_name
+            description: Full name of the rate plan.
+            dimension:
+              is_time: false
+
+          - name: plan_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: plan_type
+            description: >
+              Category of the rate plan.
+              Values: standard, promotional, corporate, package.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "rate type"
+                - "plan category"
+
+          - name: cancellation_policy
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: cancellation_policy
+            description: >
+              Cancellation terms for bookings on this rate plan.
+              Values: free-cancellation, 24-hour-notice, 48-hour-notice, non-refundable.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "cancellation terms"
+                - "refund policy"
+
+          - name: is_active
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: is_active
+            description: Whether this rate plan is currently available for new reservations (true/false).
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # RESERVATION — a guest booking before arrival
+      # -----------------------------------------------------------------------
+      - name: reservation
+        source: enterprise.hospitality.reservation
+        primary_key: [reservation_id]
+        unique_keys:
+          - [reservation_id]
+          - [confirmation_number]
+        description: >
+          A guest's booking for one or more nights at a property. Covers the
+          pre-arrival phase and links the guest, room type, rate plan, and
+          booking channel together.
+        ai_context:
+          synonyms:
+            - "booking"
+            - "room booking"
+            - "hotel reservation"
+        fields:
+          - name: reservation_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: reservation_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: confirmation_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: confirmation_number
+            description: Guest-facing booking confirmation number.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "booking reference"
+                - "booking number"
+
+          - name: party_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_id
+            description: Foreign key to enterprise_core.party (cross-file). The guest making the reservation.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "guest"
+                - "customer"
+
+          - name: site_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: site_id
+            description: Foreign key to addon_sites.site (cross-file). The property being booked.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "property"
+                - "hotel"
+                - "location"
+
+          - name: room_type_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: room_type_id
+            description: Foreign key to room_type. The accommodation type reserved.
+            dimension:
+              is_time: false
+
+          - name: rate_plan_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: rate_plan_id
+            description: Foreign key to rate_plan. The pricing arrangement applied to this reservation.
+            dimension:
+              is_time: false
+
+          - name: channel
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: channel
+            description: >
+              Booking source.
+              Values: direct, ota (online travel agency), gds (global distribution system), walk-in, corporate.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "booking channel"
+                - "distribution channel"
+                - "source"
+
+          - name: check_in_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: check_in_date
+            description: Scheduled arrival date (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "arrival date"
+                - "check-in"
+
+          - name: check_out_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: check_out_date
+            description: Scheduled departure date (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "departure date"
+                - "check-out"
+
+          - name: status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: status
+            description: >
+              Current reservation lifecycle state.
+              Values: confirmed, cancelled, no-show, checked-in, checked-out.
+            dimension:
+              is_time: false
+
+          - name: booked_rate
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: booked_rate
+            description: Agreed nightly rate at the time of booking. May differ from the room type base rate.
+            ai_context:
+              synonyms:
+                - "nightly rate"
+                - "agreed rate"
+                - "room rate"
+
+      # -----------------------------------------------------------------------
+      # STAY_RECORD — the actual stay after checkout
+      # -----------------------------------------------------------------------
+      - name: stay_record
+        source: enterprise.hospitality.stay_record
+        primary_key: [stay_id]
+        unique_keys:
+          - [stay_id]
+          - [reservation_id]
+        description: >
+          The post-stay record created after a guest checks out. Captures actual
+          arrival and departure times, the specific room occupied, and the total
+          amount billed.
+        ai_context:
+          synonyms:
+            - "stay"
+            - "completed stay"
+            - "folio"
+            - "guest folio"
+        fields:
+          - name: stay_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: stay_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: reservation_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: reservation_id
+            description: Foreign key to reservation. The booking that became this stay.
+            dimension:
+              is_time: false
+
+          - name: actual_check_in
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: actual_check_in
+            description: Actual date and time the guest checked in (ISO 8601).
+            dimension:
+              is_time: true
+
+          - name: actual_check_out
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: actual_check_out
+            description: Actual date and time the guest checked out (ISO 8601).
+            dimension:
+              is_time: true
+
+          - name: room_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: room_number
+            description: The specific room number assigned to this guest.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "room"
+                - "assigned room"
+
+          - name: folio_total
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: folio_total
+            description: Total amount billed to the guest for this stay, including room charges and any incidentals.
+            ai_context:
+              synonyms:
+                - "total bill"
+                - "stay total"
+                - "final invoice"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for the folio total.
+            dimension:
+              is_time: false
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: reservation_to_room_type
+        from: reservation
+        to: room_type
+        from_columns: [room_type_id]
+        to_columns: [type_id]
+        ai_context:
+          synonyms:
+            - "reservation books room type"
+
+      - name: reservation_to_rate_plan
+        from: reservation
+        to: rate_plan
+        from_columns: [rate_plan_id]
+        to_columns: [plan_id]
+        ai_context:
+          synonyms:
+            - "reservation uses rate plan"
+
+      - name: stay_to_reservation
+        from: stay_record
+        to: reservation
+        from_columns: [reservation_id]
+        to_columns: [reservation_id]
+        ai_context:
+          synonyms:
+            - "stay fulfils reservation"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: occupancy_rate
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(DISTINCT stay_record.stay_id)
+                * 100.0
+                / NULLIF(
+                    SUM(room_type.total_units)
+                    * DATEDIFF('day',
+                               MIN(reservation.check_in_date),
+                               MAX(reservation.check_out_date)), 0)
+        description: >
+          Percentage of available room-nights that were occupied. Use with a
+          date range and site filter for meaningful results.
+          Occupancy = occupied room-nights / available room-nights.
+        ai_context:
+          synonyms:
+            - "occupancy"
+            - "fill rate"
+            - "capacity utilisation"
+
+      - name: average_daily_rate
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(stay_record.folio_total)
+                / NULLIF(
+                    SUM(DATEDIFF('day',
+                                 stay_record.actual_check_in,
+                                 stay_record.actual_check_out)), 0)
+        description: >
+          Average revenue earned per occupied room per night.
+          ADR = total room revenue / total occupied room-nights.
+        ai_context:
+          synonyms:
+            - "ADR"
+            - "average room rate"
+            - "nightly rate"
+
+      - name: revenue_per_available_room
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(stay_record.folio_total)
+                / NULLIF(
+                    SUM(room_type.total_units)
+                    * DATEDIFF('day',
+                               MIN(reservation.check_in_date),
+                               MAX(reservation.check_out_date)), 0)
+        description: >
+          Total room revenue divided by total available room-nights.
+          RevPAR = ADR × Occupancy rate. The primary KPI for hotel revenue management.
+        ai_context:
+          synonyms:
+            - "RevPAR"
+            - "revenue per room"

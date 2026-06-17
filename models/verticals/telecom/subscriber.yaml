@@ -1,0 +1,406 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Vertical: Telecom — Subscriber
+# Module: Service lines, SIM cards, and device assignments.
+#
+# This module is for telecoms managing mobile or fixed-line subscriber accounts.
+# Avoids deep protocol jargon — focused on the commercial subscriber relationship.
+#
+# Depends on:
+#   - enterprise_core.yaml       (service_line.customer_id -> party.party_id)
+#   - addon_subscriptions.yaml   (service_line.plan_id -> plan.plan_id)
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_vertical_telecom_subscriber
+    description: >
+      Vertical module for telecoms tracking subscriber lines, associated SIM
+      cards, and end-user devices. Covers voice, data, and messaging lines
+      with their plan linkage, physical SIM, and attached device. Designed
+      around the commercial subscriber relationship without protocol details.
+    ai_context:
+      instructions: >
+        Use this model for subscriber analytics: active line counts, device
+        attach rates, plan distribution, and line churn.
+
+        Data hierarchy:
+          service_line (one line per customer per service)
+          service_line -> sim_card (SIM assigned to line)
+          service_line -> device (device attached to line)
+
+        service_line.customer_id references enterprise_core.party (cross-file).
+        service_line.plan_id references addon_subscriptions.plan (cross-file).
+
+        service_line.line_type values: voice, data, messaging, bundle.
+        service_line.status values: active, suspended, ported-out, cancelled.
+        sim_card.sim_type values: physical, embedded.
+        device.device_type values: smartphone, tablet, router, wearable, other.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # SERVICE_LINE — a subscriber's active service
+      # -----------------------------------------------------------------------
+      - name: service_line
+        source: enterprise.telecom.service_line
+        primary_key: [line_id]
+        unique_keys:
+          - [line_id]
+          - [line_number]
+        description: >
+          A single active or historical service subscription held by a customer.
+          Links the customer to a billing plan and captures the service type
+          and lifecycle dates.
+        ai_context:
+          synonyms:
+            - "subscriber line"
+            - "phone line"
+            - "service"
+            - "line"
+            - "account line"
+        fields:
+          - name: line_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: line_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_number
+            description: Subscriber's assigned number (phone number or line identifier, may be masked).
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "phone number"
+                - "MSISDN"
+                - "subscriber number"
+
+          - name: customer_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: customer_id
+            description: Foreign key to enterprise_core.party (cross-file). The subscriber holding this line.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "subscriber"
+                - "customer"
+                - "account holder"
+
+          - name: plan_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: plan_id
+            description: Foreign key to addon_subscriptions.plan (cross-file). The billing plan assigned to this line.
+            dimension:
+              is_time: false
+
+          - name: line_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_type
+            description: >
+              Type of service on this line.
+              Values: voice, data, messaging, bundle.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "service type"
+                - "line category"
+
+          - name: status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: status
+            description: >
+              Current service status.
+              Values: active, suspended, ported-out, cancelled.
+            dimension:
+              is_time: false
+
+          - name: activated_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: activated_date
+            description: Date the line was activated (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "start date"
+                - "connection date"
+
+          - name: deactivated_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: deactivated_date
+            description: Date the line was deactivated or ported out (ISO 8601). NULL for active lines.
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "cancellation date"
+                - "churn date"
+
+      # -----------------------------------------------------------------------
+      # SIM_CARD — physical or embedded SIM assigned to a line
+      # -----------------------------------------------------------------------
+      - name: sim_card
+        source: enterprise.telecom.sim_card
+        primary_key: [sim_id]
+        unique_keys:
+          - [sim_id]
+          - [sim_identifier]
+        description: >
+          The SIM (physical or embedded) provisioned on a service line. Tracks
+          the SIM identifier and its current operational status.
+        ai_context:
+          synonyms:
+            - "SIM"
+            - "SIM card"
+            - "eSIM"
+        fields:
+          - name: sim_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: sim_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: line_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_id
+            description: Foreign key to service_line. The line this SIM is provisioned on.
+            dimension:
+              is_time: false
+
+          - name: sim_identifier
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: sim_identifier
+            description: Unique SIM identifier (ICCID or equivalent, may be masked in analytics).
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "ICCID"
+                - "SIM number"
+
+          - name: sim_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: sim_type
+            description: >
+              SIM form factor.
+              Values: physical, embedded.
+            dimension:
+              is_time: false
+
+          - name: status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: status
+            description: >
+              Current SIM status.
+              Values: active, inactive, suspended, reported-lost.
+            dimension:
+              is_time: false
+
+          - name: issued_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: issued_date
+            description: Date the SIM was issued or provisioned (ISO 8601).
+            dimension:
+              is_time: true
+
+      # -----------------------------------------------------------------------
+      # DEVICE — end-user device associated with a line
+      # -----------------------------------------------------------------------
+      - name: device
+        source: enterprise.telecom.device
+        primary_key: [device_id]
+        unique_keys:
+          - [device_id]
+          - [device_identifier]
+        description: >
+          The end-user device (handset, tablet, router, or wearable) currently
+          or previously associated with a service line.
+        ai_context:
+          synonyms:
+            - "handset"
+            - "phone"
+            - "device"
+            - "equipment"
+        fields:
+          - name: device_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: device_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: line_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_id
+            description: Foreign key to service_line. The line this device is associated with.
+            dimension:
+              is_time: false
+
+          - name: device_identifier
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: device_identifier
+            description: Unique device identifier (IMEI or equivalent, may be masked).
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "IMEI"
+                - "serial number"
+
+          - name: device_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: device_type
+            description: >
+              Class of device.
+              Values: smartphone, tablet, router, wearable, other.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "equipment type"
+                - "form factor"
+
+          - name: make
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: make
+            description: Device manufacturer (e.g., Apple, Samsung, Huawei).
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "manufacturer"
+                - "brand"
+
+          - name: model
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: model
+            description: Device model name (e.g., 'iPhone 15', 'Galaxy S24').
+            dimension:
+              is_time: false
+
+          - name: status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: status
+            description: >
+              Device association status.
+              Values: active, replaced, returned, lost.
+            dimension:
+              is_time: false
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: sim_to_line
+        from: sim_card
+        to: service_line
+        from_columns: [line_id]
+        to_columns: [line_id]
+        ai_context:
+          synonyms:
+            - "SIM provisioned on line"
+
+      - name: device_to_line
+        from: device
+        to: service_line
+        from_columns: [line_id]
+        to_columns: [line_id]
+        ai_context:
+          synonyms:
+            - "device attached to line"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: active_line_count
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(CASE WHEN service_line.status = 'active' THEN 1 END)
+        description: Number of service lines currently in active status.
+        ai_context:
+          synonyms:
+            - "active subscribers"
+            - "live lines"
+            - "connected lines"
+
+      - name: device_attach_rate
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(DISTINCT CASE WHEN device.status = 'active'
+                               THEN device.line_id END)
+                * 100.0
+                / NULLIF(COUNT(DISTINCT service_line.line_id), 0)
+        description: Percentage of active service lines that have an active device attached.
+        ai_context:
+          synonyms:
+            - "handset attach rate"
+            - "device penetration"
+
+      - name: line_churn_rate
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(CASE WHEN service_line.status IN ('ported-out','cancelled') THEN 1 END)
+                * 100.0
+                / NULLIF(COUNT(service_line.line_id), 0)
+        description: Percentage of all lines that have churned (ported out or cancelled).
+        ai_context:
+          synonyms:
+            - "subscriber churn"
+            - "line attrition"
+            - "churn rate"

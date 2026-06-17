@@ -1,0 +1,279 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Add-on: Sites & Locations
+# Module: Physical locations that belong to (or are operated by) the enterprise
+# but are not the enterprise entity itself.
+#
+# This module is NOT universal — include it for enterprises that operate
+# physical locations (retail stores, warehouses, offices, plants, branches,
+# datacenters, distribution centers).
+#
+# Depends on: enterprise_core.yaml
+#   - site.address_id         -> core.address.address_id
+#   - site.legal_entity_id    -> core.legal_entity.legal_entity_id
+#
+# Referenced by:
+#   - addon_inventory.yaml    (inventory_location.site_id -> site.site_id)
+#   - addon_manufacturing.yaml (work_center.site_id -> site.site_id)
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_addon_sites
+    description: >
+      Add-on module for enterprises with physical locations (warehouses, stores,
+      offices, plants, datacenters, distribution centers). Defines site types and
+      individual sites, each linked to a postal address and legal entity.
+      Referenced by the Inventory and Manufacturing add-on modules.
+    ai_context:
+      instructions: >
+        Use this model when analyzing operations tied to physical locations.
+        Sites are distinct from the enterprise's legal entities — a legal entity
+        may operate many sites, and a site belongs to exactly one legal entity.
+
+        To get the full address of a site, join site.address_id to
+        enterprise_core.address.address_id.
+
+        This module is a prerequisite for:
+          - addon_inventory.yaml  (inventory_location.site_id)
+          - addon_manufacturing.yaml (work_center.site_id)
+
+        Load enterprise_core.yaml with this file to resolve address and
+        legal entity cross-file joins.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # SITE_TYPE — classification of a physical location
+      # -----------------------------------------------------------------------
+      - name: site_type
+        source: enterprise.sites.site_type
+        primary_key: [site_type_id]
+        unique_keys:
+          - [site_type_id]
+          - [site_type_code]
+        description: >
+          A classification for the operational purpose of a physical site.
+          Implementors should extend this list for their industry
+          (e.g., hospital, branch, pop-up store).
+        ai_context:
+          synonyms:
+            - "location type"
+            - "facility type"
+        fields:
+          - name: site_type_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: site_type_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: site_type_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: site_type_code
+            description: Unique short code (e.g., 'WH', 'STORE', 'DC', 'OFFICE').
+            dimension:
+              is_time: false
+
+          - name: site_type_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: site_type_name
+            description: >
+              Display name of the site type. Common values: warehouse, store,
+              office, plant, datacenter, distribution-center, branch,
+              fulfillment-center.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "facility type"
+                - "location category"
+
+      # -----------------------------------------------------------------------
+      # SITE — a specific physical location operated by the enterprise
+      # -----------------------------------------------------------------------
+      - name: site
+        source: enterprise.sites.site
+        primary_key: [site_id]
+        unique_keys:
+          - [site_id]
+          - [site_code]
+        description: >
+          A specific physical location operated by or associated with the
+          enterprise. Includes warehouses, retail stores, offices, manufacturing
+          plants, datacenters, and other physical facilities. Each site has a
+          type, an address, and belongs to a legal entity.
+        ai_context:
+          synonyms:
+            - "location"
+            - "facility"
+            - "store"
+            - "warehouse"
+            - "office"
+            - "branch"
+        fields:
+          - name: site_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: site_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: site_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: site_code
+            description: Unique short code for the site (e.g., 'WH-NYC-01', 'STORE-LA-42').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "location code"
+                - "facility code"
+
+          - name: site_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: site_name
+            description: Display name of the site (e.g., 'New York Distribution Center', 'LA Flagship Store').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "location name"
+                - "facility name"
+                - "store name"
+
+          - name: site_type_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: site_type_id
+            description: Foreign key to site_type. Classifies the operational purpose of this site.
+            dimension:
+              is_time: false
+
+          - name: address_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: address_id
+            description: Foreign key to enterprise_core.address. The physical postal address of this site.
+            dimension:
+              is_time: false
+
+          - name: legal_entity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: legal_entity_id
+            description: Foreign key to enterprise_core.legal_entity. The legal entity that owns or operates this site.
+            dimension:
+              is_time: false
+
+          - name: capacity
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: capacity
+            description: Numeric capacity of the site (quantity). Unit is defined by capacity_unit.
+            ai_context:
+              synonyms:
+                - "size"
+                - "storage capacity"
+
+          - name: capacity_unit
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: capacity_unit
+            description: >
+              Unit for the capacity field (e.g., 'sq-ft', 'sq-m', 'pallets',
+              'rack-units', 'seats'). NULL if capacity is not applicable.
+            dimension:
+              is_time: false
+
+          - name: site_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: site_status
+            description: >
+              Operational status of the site.
+              Values: active, inactive, under-construction, closing, closed.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "status"
+                - "operational status"
+
+          - name: opened_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: opened_date
+            description: Date the site became operational (ISO 8601). NULL if not yet open.
+            dimension:
+              is_time: true
+
+          - name: closed_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: closed_date
+            description: Date the site closed permanently (ISO 8601). NULL for active sites.
+            dimension:
+              is_time: true
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: site_to_site_type
+        from: site
+        to: site_type
+        from_columns: [site_type_id]
+        to_columns: [site_type_id]
+        ai_context:
+          synonyms:
+            - "site classification"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: active_site_count
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(CASE WHEN site.site_status = 'active' THEN 1 END)
+        description: Number of currently active sites across all types.
+        ai_context:
+          synonyms:
+            - "open locations"
+            - "active facilities"
+            - "store count"
+
+      - name: site_count_by_type
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(site.site_id)
+        description: >
+          Count of sites. Apply GROUP BY site_type.site_type_name to get the
+          breakdown by site type (warehouse count, store count, etc.).
+        ai_context:
+          synonyms:
+            - "location count"
+            - "facility count"

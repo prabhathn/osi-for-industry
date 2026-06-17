@@ -1,0 +1,461 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Vertical: Retail — Point of Sale
+# Module: In-store and online transaction capture at the basket level.
+#
+# This module is specific to retail operators that need to track individual
+# customer transactions at the basket/till level, distinct from the B2B
+# sales_order pattern in enterprise_sales.
+#
+# Depends on:
+#   - addon_sites.yaml  (pos_terminal.site_id -> site.site_id)
+#   - enterprise_hr.yaml (transaction.cashier_employee_id -> employee.employee_id)
+#   - enterprise_procurement.yaml (transaction_line.product_id -> product.product_id)
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_vertical_retail_pos
+    description: >
+      Vertical module for physical retail and e-commerce operators. Captures
+      customer basket transactions at the terminal level: the overall transaction
+      header, individual product lines, and the payment tender split.
+      Distinct from the B2B sales order model — focused on consumer-facing
+      point-of-sale and online checkout.
+    ai_context:
+      instructions: >
+        Use this model for retail transaction analytics: sales volumes, basket
+        size, channel mix, and payment method trends.
+
+        Data hierarchy:
+          pos_terminal -> transaction (terminal processes many transactions)
+          transaction -> transaction_line (basket items per transaction)
+          transaction -> payment_tender (payment splits per transaction)
+
+        transaction.channel values: in-store, online, mobile, kiosk.
+        transaction.status values: completed, voided, refunded.
+
+        pos_terminal.site_id references addon_sites.site (cross-file).
+        transaction.cashier_employee_id references enterprise_hr.employee (cross-file).
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # POS_TERMINAL — a sales channel endpoint
+      # -----------------------------------------------------------------------
+      - name: pos_terminal
+        source: enterprise.retail_pos.pos_terminal
+        primary_key: [terminal_id]
+        unique_keys:
+          - [terminal_id]
+          - [terminal_code]
+        description: >
+          A physical till, self-checkout kiosk, web storefront, or mobile app
+          instance through which transactions are processed.
+        ai_context:
+          synonyms:
+            - "till"
+            - "register"
+            - "checkout"
+            - "terminal"
+        fields:
+          - name: terminal_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: terminal_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: terminal_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: terminal_code
+            description: Unique operational code for the terminal (e.g., 'STORE-01-TILL-03').
+            dimension:
+              is_time: false
+
+          - name: site_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: site_id
+            description: Foreign key to addon_sites.site (cross-file). The location this terminal operates from.
+            dimension:
+              is_time: false
+
+          - name: terminal_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: terminal_type
+            description: >
+              Class of terminal.
+              Values: physical, web, mobile, kiosk.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "channel type"
+                - "till type"
+
+          - name: is_active
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: is_active
+            description: Whether this terminal is currently operational (true/false).
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # TRANSACTION — a customer basket / checkout event
+      # -----------------------------------------------------------------------
+      - name: transaction
+        source: enterprise.retail_pos.transaction
+        primary_key: [txn_id]
+        unique_keys:
+          - [txn_id]
+          - [receipt_number]
+        description: >
+          A completed or voided customer checkout event. Represents the full
+          basket before line-level detail, capturing channel, timing, and
+          the cashier who processed it.
+        ai_context:
+          synonyms:
+            - "sale"
+            - "basket"
+            - "purchase"
+            - "receipt"
+            - "checkout"
+        fields:
+          - name: txn_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: txn_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: receipt_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: receipt_number
+            description: Human-readable receipt or transaction number.
+            dimension:
+              is_time: false
+
+          - name: terminal_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: terminal_id
+            description: Foreign key to pos_terminal. The terminal this transaction was processed on.
+            dimension:
+              is_time: false
+
+          - name: cashier_employee_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: cashier_employee_id
+            description: Foreign key to enterprise_hr.employee (cross-file). The cashier who processed the transaction. NULL for self-service or online.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "cashier"
+                - "operator"
+
+          - name: txn_datetime
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: txn_datetime
+            description: Date and time the transaction was completed (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "sale time"
+                - "transaction date"
+                - "purchase time"
+
+          - name: channel
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: channel
+            description: >
+              Sales channel for this transaction.
+              Values: in-store, online, mobile, kiosk.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "sales channel"
+                - "purchase channel"
+
+          - name: status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: status
+            description: >
+              Transaction lifecycle state.
+              Values: completed, voided, refunded.
+            dimension:
+              is_time: false
+
+          - name: transaction_total
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: transaction_total
+            description: Total amount paid by the customer including tax, after all discounts.
+            ai_context:
+              synonyms:
+                - "basket total"
+                - "receipt total"
+                - "sale amount"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for the transaction.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # TRANSACTION_LINE — one product within a basket
+      # -----------------------------------------------------------------------
+      - name: transaction_line
+        source: enterprise.retail_pos.transaction_line
+        primary_key: [line_id]
+        unique_keys:
+          - [line_id]
+        description: >
+          A single product (SKU) and quantity within a transaction. Records the
+          unit selling price, any discount applied, and the resulting line total.
+        ai_context:
+          synonyms:
+            - "basket line"
+            - "sale line"
+            - "receipt line"
+            - "item"
+        fields:
+          - name: line_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: txn_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: txn_id
+            description: Foreign key to transaction. The basket this line belongs to.
+            dimension:
+              is_time: false
+
+          - name: product_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_id
+            description: Foreign key to enterprise_procurement.product (cross-file). The item sold.
+            dimension:
+              is_time: false
+
+          - name: quantity
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: quantity
+            description: Units of the product sold on this line.
+            ai_context:
+              synonyms:
+                - "qty"
+                - "units sold"
+
+          - name: unit_price
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: unit_price
+            description: Selling price per unit at time of sale (may include promotional pricing).
+            ai_context:
+              synonyms:
+                - "selling price"
+                - "price"
+
+          - name: discount_amount
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: discount_amount
+            description: Total discount deducted on this line (coupon, promotion, loyalty redemption).
+            ai_context:
+              synonyms:
+                - "discount"
+                - "saving"
+
+          - name: line_total
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_total
+            description: Net line amount after discount (quantity × unit_price − discount_amount).
+            ai_context:
+              synonyms:
+                - "net line"
+                - "line amount"
+
+      # -----------------------------------------------------------------------
+      # PAYMENT_TENDER — a payment method used within a transaction
+      # -----------------------------------------------------------------------
+      - name: payment_tender
+        source: enterprise.retail_pos.payment_tender
+        primary_key: [tender_id]
+        unique_keys:
+          - [tender_id]
+        description: >
+          One payment method applied to a transaction. A transaction may be split
+          across multiple tenders (e.g., part card, part gift card).
+        ai_context:
+          synonyms:
+            - "payment"
+            - "tender"
+            - "payment method"
+        fields:
+          - name: tender_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: tender_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: txn_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: txn_id
+            description: Foreign key to transaction. The transaction this payment applies to.
+            dimension:
+              is_time: false
+
+          - name: tender_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: tender_type
+            description: >
+              Payment method used.
+              Values: cash, card, gift-card, digital-wallet, store-credit.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "payment type"
+                - "payment method"
+
+          - name: amount
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: amount
+            description: Amount paid via this tender type.
+            ai_context:
+              synonyms:
+                - "payment amount"
+                - "tendered amount"
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: transaction_to_terminal
+        from: transaction
+        to: pos_terminal
+        from_columns: [terminal_id]
+        to_columns: [terminal_id]
+        ai_context:
+          synonyms:
+            - "transaction processed on terminal"
+
+      - name: transaction_line_to_transaction
+        from: transaction_line
+        to: transaction
+        from_columns: [txn_id]
+        to_columns: [txn_id]
+        ai_context:
+          synonyms:
+            - "line belongs to transaction"
+
+      - name: payment_to_transaction
+        from: payment_tender
+        to: transaction
+        from_columns: [txn_id]
+        to_columns: [txn_id]
+        ai_context:
+          synonyms:
+            - "payment covers transaction"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: gross_sales
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(CASE WHEN transaction.status = 'completed'
+                         THEN transaction.transaction_total ELSE 0 END)
+        description: Total revenue from completed transactions before returns or voids.
+        ai_context:
+          synonyms:
+            - "total sales"
+            - "gross revenue"
+            - "turnover"
+
+      - name: average_transaction_value
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(CASE WHEN transaction.status = 'completed'
+                         THEN transaction.transaction_total ELSE 0 END)
+                / NULLIF(COUNT(CASE WHEN transaction.status = 'completed' THEN 1 END), 0)
+        description: Average basket value per completed transaction.
+        ai_context:
+          synonyms:
+            - "ATV"
+            - "average basket size"
+            - "average order value"
+
+      - name: items_per_transaction
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(transaction_line.quantity)
+                / NULLIF(COUNT(DISTINCT transaction_line.txn_id), 0)
+        description: Average number of items (units) per transaction.
+        ai_context:
+          synonyms:
+            - "basket size"
+            - "units per transaction"
+            - "items per basket"

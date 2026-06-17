@@ -1,0 +1,1153 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Enterprise Core Semantic Model
+# Foundation layer: shared reference entities used by all domain and add-on models.
+# All domain files reference datasets in this file via consistent source naming:
+#   enterprise.core.<table>
+#
+# OOP Inheritance pattern:
+#   Party is the abstract base entity. Customer, Supplier, Employee etc. in
+#   domain files extend Party by holding a party_id foreign key.
+#
+# Cross-file dependencies: none — this file has no upstream dependencies.
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_core
+    description: >
+      Universal core reference entities shared across all enterprise domains.
+      Contains the Party (person/organization) base entity, legal entity hierarchy,
+      address and contact infrastructure, currency and ISO 8601 calendar dimensions,
+      and the product catalog with pricing.
+    ai_context:
+      instructions: >
+        This model is the foundation layer. All other enterprise domain models
+        (HR, Finance, Sales, Marketing, Procurement) and add-on modules
+        (Sites, Inventory, Projects, Manufacturing, Support, Compliance) depend
+        on entities defined here.
+
+        Key design pattern — OOP inheritance via Party:
+          Customer  (enterprise_sales)   -> party_id -> party
+          Supplier  (enterprise_procurement) -> party_id -> party
+          Employee  (enterprise_hr)      -> party_id -> party
+        Load this file together with any domain file to resolve cross-file joins.
+
+        LegalEntity models company subsidiaries and multi-entity structures.
+        A single-entity company will have exactly one row in legal_entity.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # PARTY — abstract base for any person, organization, or group
+      # -----------------------------------------------------------------------
+      - name: party
+        source: enterprise.core.party
+        primary_key: [party_id]
+        unique_keys:
+          - [party_id]
+        description: >
+          Universal base entity for any person, organization, or group that the
+          enterprise has a relationship with. Domain-specific roles (Customer,
+          Supplier, Employee, Contact) extend this entity by holding a foreign
+          key to party_id and adding role-specific attributes.
+        ai_context:
+          instructions: >
+            To get a full Customer record, join enterprise_sales.customer to
+            this dataset on customer.party_id = party.party_id.
+            Similarly for Employee and Supplier.
+          synonyms:
+            - "person"
+            - "organization"
+            - "account"
+            - "entity"
+        fields:
+          - name: party_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_id
+            description: Surrogate primary key for the party.
+            dimension:
+              is_time: false
+
+          - name: party_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_type
+            description: >
+              Classifies the party. Values: person, organization, group.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "entity type"
+                - "party classification"
+
+          - name: display_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: display_name
+            description: >
+              Short display name used in UIs and reports. For a person this is
+              typically 'First Last'; for an organization it is the trading name.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "name"
+                - "party name"
+                - "account name"
+
+          - name: legal_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: legal_name
+            description: >
+              Full legal name as registered. May differ from display_name
+              (e.g., 'Acme Corp.' vs 'Acme Corporation Ltd.').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "registered name"
+                - "official name"
+
+          - name: created_at
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: created_at
+            description: Timestamp when the party record was created (UTC).
+            dimension:
+              is_time: true
+
+          - name: updated_at
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: updated_at
+            description: Timestamp of the last update to this party record (UTC).
+            dimension:
+              is_time: true
+
+      # -----------------------------------------------------------------------
+      # LEGAL ENTITY — company/subsidiary hierarchy
+      # -----------------------------------------------------------------------
+      - name: legal_entity
+        source: enterprise.core.legal_entity
+        primary_key: [legal_entity_id]
+        unique_keys:
+          - [legal_entity_id]
+          - [entity_code]
+        description: >
+          Represents a legally registered business entity within the enterprise
+          group. Supports multi-entity (holding company / subsidiary) structures
+          through a self-referencing parent_entity_id. A single-entity company
+          will have exactly one row.
+        ai_context:
+          synonyms:
+            - "company"
+            - "subsidiary"
+            - "legal entity"
+            - "business unit"
+            - "entity"
+        fields:
+          - name: legal_entity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: legal_entity_id
+            description: Surrogate primary key for the legal entity.
+            dimension:
+              is_time: false
+
+          - name: entity_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: entity_name
+            description: Full legal name of the entity as registered.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "company name"
+                - "entity name"
+
+          - name: entity_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: entity_code
+            description: Short unique code used in GL and reporting (e.g., 'US01', 'DE02').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "company code"
+                - "entity code"
+
+          - name: parent_entity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: parent_entity_id
+            description: >
+              References legal_entity_id of the parent entity. NULL for the
+              top-level holding company.
+            dimension:
+              is_time: false
+
+          - name: jurisdiction
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: jurisdiction
+            description: ISO 3166-1 alpha-2 country code where the entity is registered (e.g., 'US', 'DE', 'GB').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "country"
+                - "country code"
+
+          - name: default_currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: default_currency_code
+            description: ISO 4217 functional currency for this entity (e.g., 'USD', 'EUR').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "functional currency"
+                - "base currency"
+
+          - name: tax_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: tax_id
+            description: Government-issued tax identification number (EIN, VAT ID, etc.).
+            dimension:
+              is_time: false
+
+          - name: entity_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: entity_status
+            description: >
+              Operational status of the entity. Values: active, inactive, dissolved.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # ADDRESS — reusable postal address
+      # -----------------------------------------------------------------------
+      - name: address
+        source: enterprise.core.address
+        primary_key: [address_id]
+        unique_keys:
+          - [address_id]
+        description: >
+          Reusable postal address record. Parties can have multiple addresses
+          of different types via the party_address link table. Sites also
+          reference this entity directly.
+        ai_context:
+          synonyms:
+            - "postal address"
+            - "mailing address"
+            - "location address"
+        fields:
+          - name: address_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: address_id
+            description: Surrogate primary key for the address.
+            dimension:
+              is_time: false
+
+          - name: address_line_1
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: address_line_1
+            description: Primary street address line (street number, street name).
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "street"
+                - "street address"
+
+          - name: address_line_2
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: address_line_2
+            description: Secondary address line (suite, floor, unit number). May be NULL.
+            dimension:
+              is_time: false
+
+          - name: city
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: city
+            description: City or municipality name.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "city"
+                - "town"
+
+          - name: state_province
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: state_province
+            description: State, province, or region. Use ISO 3166-2 subdivision codes where applicable.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "state"
+                - "province"
+                - "region"
+
+          - name: postal_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: postal_code
+            description: Postal or ZIP code.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "zip code"
+                - "postcode"
+
+          - name: country_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: country_code
+            description: ISO 3166-1 alpha-2 country code (e.g., 'US', 'GB', 'DE').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "country"
+
+      # -----------------------------------------------------------------------
+      # PARTY_ADDRESS — links a party to one or more addresses with type
+      # -----------------------------------------------------------------------
+      - name: party_address
+        source: enterprise.core.party_address
+        primary_key: [party_address_id]
+        unique_keys:
+          - [party_address_id]
+          - [party_id, address_type]
+        description: >
+          Junction table linking a party to one or more addresses. A party may
+          have multiple addresses of different types simultaneously.
+        ai_context:
+          synonyms:
+            - "party address link"
+            - "address assignment"
+        fields:
+          - name: party_address_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_address_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: party_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_id
+            description: Foreign key to party.
+            dimension:
+              is_time: false
+
+          - name: address_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: address_id
+            description: Foreign key to address.
+            dimension:
+              is_time: false
+
+          - name: address_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: address_type
+            description: >
+              Purpose of this address for the party.
+              Values: billing, shipping, primary, registered, other.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "address category"
+                - "address purpose"
+
+          - name: is_active
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: is_active
+            description: TRUE if this is the current active address of this type for the party.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # CONTACT_POINT — email, phone, URL per party
+      # -----------------------------------------------------------------------
+      - name: contact_point
+        source: enterprise.core.contact_point
+        primary_key: [contact_point_id]
+        unique_keys:
+          - [contact_point_id]
+        description: >
+          A single communication channel (email address, phone number, URL, or
+          social handle) associated with a party. A party may have many contact
+          points of different types.
+        ai_context:
+          synonyms:
+            - "email"
+            - "phone"
+            - "contact info"
+            - "communication channel"
+        fields:
+          - name: contact_point_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: contact_point_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: party_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_id
+            description: Foreign key to the party this contact point belongs to.
+            dimension:
+              is_time: false
+
+          - name: contact_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: contact_type
+            description: >
+              Type of contact channel.
+              Values: email, phone, mobile, fax, url, social.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "channel type"
+                - "contact method"
+
+          - name: contact_value
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: contact_value
+            description: The actual value (e.g., 'alice@example.com', '+1-555-0100').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "email address"
+                - "phone number"
+                - "contact detail"
+
+          - name: is_primary
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: is_primary
+            description: TRUE if this is the primary contact point of this type for the party.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # CURRENCY — ISO 4217 reference dimension
+      # -----------------------------------------------------------------------
+      - name: currency
+        source: enterprise.core.currency
+        primary_key: [currency_code]
+        unique_keys:
+          - [currency_code]
+        description: >
+          ISO 4217 currency reference dimension. Provides currency codes, names,
+          and symbols for all monetary fields across the enterprise model.
+        ai_context:
+          synonyms:
+            - "currencies"
+            - "money"
+        fields:
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 three-letter currency code (e.g., 'USD', 'EUR', 'GBP').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "currency"
+                - "ISO currency"
+
+          - name: currency_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_name
+            description: Full name of the currency (e.g., 'US Dollar', 'Euro').
+            dimension:
+              is_time: false
+
+          - name: currency_symbol
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_symbol
+            description: Display symbol for the currency (e.g., '$', '€', '£').
+            dimension:
+              is_time: false
+
+          - name: minor_unit_digits
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: minor_unit_digits
+            description: Number of decimal places in the minor unit (e.g., 2 for USD, 0 for JPY).
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # CALENDAR_DATE — ISO 8601 date spine dimension
+      # -----------------------------------------------------------------------
+      - name: calendar_date
+        source: enterprise.core.calendar_date
+        primary_key: [date_id]
+        unique_keys:
+          - [date_id]
+          - [calendar_date]
+        description: >
+          Standard ISO 8601 date dimension covering all dates in scope.
+          Used by all time-based analysis across every domain. ISO 8601
+          conventions: week starts Monday (iso_day_of_week 1=Monday, 7=Sunday),
+          iso_week_of_year per ISO 8601 week-numbering year.
+        ai_context:
+          synonyms:
+            - "date"
+            - "calendar"
+            - "time"
+            - "day"
+        fields:
+          - name: date_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: date_id
+            description: Integer surrogate key in YYYYMMDD format (e.g., 20240115).
+            dimension:
+              is_time: false
+
+          - name: calendar_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: calendar_date
+            description: The actual DATE value (ISO 8601 format YYYY-MM-DD).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "date"
+                - "day"
+
+          - name: iso_year
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: iso_year
+            description: "ISO 8601 calendar year (e.g., 2024). Note: ISO year may differ from calendar year for days in week 1 or week 52/53."
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "year"
+                - "calendar year"
+
+          - name: iso_quarter
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: iso_quarter
+            description: Quarter number within the year (1-4).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "quarter"
+                - "Q1"
+                - "Q2"
+                - "Q3"
+                - "Q4"
+
+          - name: iso_month
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: iso_month
+            description: Month number within the year (1-12).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "month"
+                - "month number"
+
+          - name: iso_month_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: iso_month_name
+            description: Full English month name (e.g., 'January', 'February').
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "month name"
+
+          - name: iso_week_of_year
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: iso_week_of_year
+            description: ISO 8601 week number within the year (01-53). Week 1 is the week containing the first Thursday of the year.
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "week"
+                - "week number"
+                - "ISO week"
+
+          - name: iso_day_of_week
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: iso_day_of_week
+            description: ISO 8601 day of week (1=Monday, 2=Tuesday, ..., 7=Sunday).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "day of week"
+                - "weekday"
+
+          - name: day_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: day_name
+            description: Full English day name (e.g., 'Monday', 'Tuesday').
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "day name"
+                - "weekday name"
+
+          - name: is_weekend
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: is_weekend
+            description: TRUE if iso_day_of_week is 6 (Saturday) or 7 (Sunday).
+            dimension:
+              is_time: false
+
+          - name: is_business_day
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: is_business_day
+            description: TRUE if the date is a working business day (not a weekend or public holiday). Holiday calendar is implementation-defined.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "working day"
+                - "business day"
+
+      # -----------------------------------------------------------------------
+      # PRODUCT_CATEGORY — self-referencing hierarchy
+      # -----------------------------------------------------------------------
+      - name: product_category
+        source: enterprise.core.product_category
+        primary_key: [category_id]
+        unique_keys:
+          - [category_id]
+          - [category_code]
+        description: >
+          Hierarchical product classification. Supports unlimited depth via the
+          self-referencing parent_category_id. Use recursive CTEs to traverse
+          the full hierarchy. Keep category definitions generic — implementors
+          should add industry-specific levels via customization.
+        ai_context:
+          synonyms:
+            - "product category"
+            - "product type"
+            - "product group"
+            - "department"
+        fields:
+          - name: category_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: category_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: category_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: category_name
+            description: Display name of the product category.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "category"
+                - "product family"
+
+          - name: category_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: category_code
+            description: Unique short code used in reporting (e.g., 'ELEC', 'SFTW').
+            dimension:
+              is_time: false
+
+          - name: parent_category_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: parent_category_id
+            description: References category_id of the parent category. NULL for root-level categories.
+            dimension:
+              is_time: false
+
+          - name: category_depth
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: category_depth
+            description: Depth level in the hierarchy (0 = root, 1 = first child, etc.).
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # PRODUCT — sellable unit (good, service, or subscription)
+      # -----------------------------------------------------------------------
+      - name: product
+        source: enterprise.core.product
+        primary_key: [product_id]
+        unique_keys:
+          - [product_id]
+          - [product_code]
+        description: >
+          The sellable unit of the enterprise — a physical good, a service, or
+          a subscription offering. Intentionally minimal: only universal
+          attributes are included. Industry-specific attributes (color, size,
+          flavor, weight class) should be added via custom_extensions or
+          separate dimension tables linked by product_id.
+        ai_context:
+          synonyms:
+            - "item"
+            - "SKU"
+            - "product"
+            - "service"
+            - "offering"
+            - "merchandise"
+        fields:
+          - name: product_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: product_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_code
+            description: >
+              Business key / SKU. Unique, human-readable identifier used in
+              orders, invoices, and catalogs.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "SKU"
+                - "item code"
+                - "part number"
+                - "product number"
+
+          - name: product_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_name
+            description: Display name of the product as shown to customers and in reports.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "item name"
+                - "product description"
+                - "product title"
+
+          - name: category_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: category_id
+            description: Foreign key to product_category.
+            dimension:
+              is_time: false
+
+          - name: unit_of_measure
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: unit_of_measure
+            description: >
+              Base unit in which the product is sold or consumed
+              (e.g., 'each', 'kg', 'liter', 'hour', 'license', 'month').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "UOM"
+                - "unit"
+
+          - name: product_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_type
+            description: >
+              Broad classification of the sellable unit.
+              Values: good, service, subscription, bundle.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "item type"
+                - "offering type"
+
+          - name: product_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_status
+            description: >
+              Lifecycle status of the product.
+              Values: active, discontinued, draft, archived.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "status"
+                - "availability"
+
+          - name: effective_from
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: effective_from
+            description: Date from which this product is available for sale.
+            dimension:
+              is_time: true
+
+          - name: effective_to
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: effective_to
+            description: Date after which this product is no longer available. NULL means currently active.
+            dimension:
+              is_time: true
+
+      # -----------------------------------------------------------------------
+      # PRICE_LIST — grouping container for prices
+      # -----------------------------------------------------------------------
+      - name: price_list
+        source: enterprise.core.price_list
+        primary_key: [price_list_id]
+        unique_keys:
+          - [price_list_id]
+          - [price_list_code]
+        description: >
+          A named grouping of product prices. Common examples: standard retail
+          price list, wholesale price list, partner price list, promotional
+          price list. Each price list applies to a specific currency.
+        ai_context:
+          synonyms:
+            - "price book"
+            - "rate card"
+            - "price list"
+        fields:
+          - name: price_list_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: price_list_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: price_list_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: price_list_code
+            description: Unique short code (e.g., 'RETAIL-USD', 'WHOLESALE-EUR').
+            dimension:
+              is_time: false
+
+          - name: price_list_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: price_list_name
+            description: Human-readable name of the price list.
+            dimension:
+              is_time: false
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for all prices in this list.
+            dimension:
+              is_time: false
+
+          - name: effective_from
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: effective_from
+            description: Date from which this price list is active.
+            dimension:
+              is_time: true
+
+          - name: effective_to
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: effective_to
+            description: Date after which this price list expires. NULL means currently active.
+            dimension:
+              is_time: true
+
+      # -----------------------------------------------------------------------
+      # PRODUCT_PRICE — unit price of a product within a price list
+      # -----------------------------------------------------------------------
+      - name: product_price
+        source: enterprise.core.product_price
+        primary_key: [price_id]
+        unique_keys:
+          - [price_id]
+          - [product_id, price_list_id, effective_from]
+        description: >
+          The unit price of a product within a specific price list, valid for
+          a given date range. Supports price history and future pricing.
+        ai_context:
+          synonyms:
+            - "price"
+            - "list price"
+            - "unit price"
+        fields:
+          - name: price_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: price_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: product_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_id
+            description: Foreign key to product.
+            dimension:
+              is_time: false
+
+          - name: price_list_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: price_list_id
+            description: Foreign key to price_list.
+            dimension:
+              is_time: false
+
+          - name: unit_price
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: unit_price
+            description: Price per one unit_of_measure of the product, in the currency of the price list.
+            ai_context:
+              synonyms:
+                - "price"
+                - "list price"
+                - "rate"
+
+          - name: effective_from
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: effective_from
+            description: Date from which this price is effective.
+            dimension:
+              is_time: true
+
+          - name: effective_to
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: effective_to
+            description: Date after which this price expires. NULL means currently active.
+            dimension:
+              is_time: true
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: party_address_to_party
+        from: party_address
+        to: party
+        from_columns: [party_id]
+        to_columns: [party_id]
+        ai_context:
+          synonyms:
+            - "party has address"
+
+      - name: party_address_to_address
+        from: party_address
+        to: address
+        from_columns: [address_id]
+        to_columns: [address_id]
+        ai_context:
+          synonyms:
+            - "address details for party"
+
+      - name: contact_point_to_party
+        from: contact_point
+        to: party
+        from_columns: [party_id]
+        to_columns: [party_id]
+        ai_context:
+          synonyms:
+            - "contact info for party"
+
+      - name: legal_entity_to_parent
+        from: legal_entity
+        to: legal_entity
+        from_columns: [parent_entity_id]
+        to_columns: [legal_entity_id]
+        ai_context:
+          synonyms:
+            - "parent company"
+            - "subsidiary hierarchy"
+
+      - name: product_to_category
+        from: product
+        to: product_category
+        from_columns: [category_id]
+        to_columns: [category_id]
+        ai_context:
+          synonyms:
+            - "product belongs to category"
+
+      - name: product_category_to_parent
+        from: product_category
+        to: product_category
+        from_columns: [parent_category_id]
+        to_columns: [category_id]
+        ai_context:
+          synonyms:
+            - "parent category"
+            - "category hierarchy"
+
+      - name: product_price_to_product
+        from: product_price
+        to: product
+        from_columns: [product_id]
+        to_columns: [product_id]
+        ai_context:
+          synonyms:
+            - "product pricing"
+
+      - name: product_price_to_price_list
+        from: product_price
+        to: price_list
+        from_columns: [price_list_id]
+        to_columns: [price_list_id]
+        ai_context:
+          synonyms:
+            - "price list assignment"
+
+      - name: price_list_to_currency
+        from: price_list
+        to: currency
+        from_columns: [currency_code]
+        to_columns: [currency_code]
+        ai_context:
+          synonyms:
+            - "price list currency"
+
+    # -------------------------------------------------------------------------
+    # METRICS — core layer has no analytic metrics (reference data only)
+    # -------------------------------------------------------------------------
+    metrics: []

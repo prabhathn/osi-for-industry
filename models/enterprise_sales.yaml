@@ -1,0 +1,866 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Enterprise Sales Semantic Model
+# Domain layer: Sales & Revenue
+#
+# Depends on: enterprise_core.yaml
+#   - customer.party_id            -> core.party.party_id
+#   - customer.legal_entity_id     -> core.legal_entity.legal_entity_id
+#   - lead.party_id                -> core.party.party_id
+#   - sales_order_line.product_id  -> core.product.product_id
+#   - sales_order.currency_code    -> core.currency.currency_code
+#
+# OOP inheritance:
+#   Customer extends Party — holds sales-role-specific fields only.
+#   Join customer.party_id = core.party.party_id for name and contact info.
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_sales
+    description: >
+      Sales domain model covering the full revenue cycle: territory management,
+      lead and opportunity pipeline, customers (as extensions of core Party),
+      sales orders, and order lines. Supports B2B and B2C models.
+    ai_context:
+      instructions: >
+        This model covers sales analytics and pipeline reporting.
+
+        Revenue cycle flow:
+          lead -> opportunity -> sales_order -> sales_order_line -> product
+
+        Customer is a role extension of core Party. To get a customer's name
+        and contact details, join customer.party_id to enterprise_core.party.
+        A lead.party_id references an unqualified party (prospect) that may
+        later become a customer.
+
+        Key metrics: pipeline_value (open opportunities), win_rate,
+        total_order_revenue, and customer_lifetime_value.
+
+        Load enterprise_core.yaml with this file to resolve party, product,
+        and legal entity cross-file joins.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # SALES_TERRITORY — geographic or logical sales region
+      # -----------------------------------------------------------------------
+      - name: sales_territory
+        source: enterprise.sales.sales_territory
+        primary_key: [territory_id]
+        unique_keys:
+          - [territory_id]
+          - [territory_code]
+        description: >
+          A geographic or logical grouping of accounts and opportunities
+          assigned to one or more sales representatives. Supports hierarchy
+          via parent_territory_id (e.g., Region > Area > Territory).
+        ai_context:
+          synonyms:
+            - "territory"
+            - "region"
+            - "sales region"
+            - "area"
+        fields:
+          - name: territory_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: territory_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: territory_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: territory_code
+            description: Unique short code (e.g., 'NA-WEST', 'EMEA-DACH').
+            dimension:
+              is_time: false
+
+          - name: territory_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: territory_name
+            description: Display name of the territory (e.g., 'North America West', 'DACH Region').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "region name"
+                - "territory name"
+
+          - name: parent_territory_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: parent_territory_id
+            description: References territory_id of the parent territory. NULL for the top-level territory.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # CUSTOMER — extends core Party with sales-role attributes
+      # -----------------------------------------------------------------------
+      - name: customer
+        source: enterprise.sales.customer
+        primary_key: [customer_id]
+        unique_keys:
+          - [customer_id]
+          - [customer_number]
+          - [party_id]
+        description: >
+          A party that has purchased from or is actively being sold to by the
+          enterprise. Extends core Party — all name, address, and contact info
+          lives in enterprise_core.party. This dataset holds only
+          customer-role-specific attributes such as tier, credit limit, and
+          territory.
+        ai_context:
+          synonyms:
+            - "account"
+            - "client"
+            - "buyer"
+            - "customer account"
+        fields:
+          - name: customer_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: customer_id
+            description: Surrogate primary key for the customer role.
+            dimension:
+              is_time: false
+
+          - name: party_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_id
+            description: >
+              Foreign key to enterprise_core.party. Join here to get the
+              customer's name, address, and contact information.
+            dimension:
+              is_time: false
+
+          - name: legal_entity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: legal_entity_id
+            description: Foreign key to enterprise_core.legal_entity. The selling entity that owns this customer relationship.
+            dimension:
+              is_time: false
+
+          - name: customer_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: customer_number
+            description: Human-readable business key (e.g., 'CUST-00291').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "customer ID"
+                - "account number"
+
+          - name: customer_since
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: customer_since
+            description: Date the party first became a customer (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "acquisition date"
+                - "first purchase date"
+
+          - name: customer_tier
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: customer_tier
+            description: >
+              Segmentation tier based on revenue or strategic value.
+              Values: strategic, enterprise, mid-market, small-business, individual.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "segment"
+                - "tier"
+                - "account tier"
+
+          - name: credit_limit
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: credit_limit
+            description: Maximum credit extended to this customer (in currency_code).
+            ai_context:
+              synonyms:
+                - "credit"
+                - "credit limit"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: Default transaction currency for this customer (ISO 4217).
+            dimension:
+              is_time: false
+
+          - name: assigned_territory_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: assigned_territory_id
+            description: Foreign key to sales_territory. The territory this customer is assigned to.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # LEAD — a prospective customer not yet qualified
+      # -----------------------------------------------------------------------
+      - name: lead
+        source: enterprise.sales.lead
+        primary_key: [lead_id]
+        unique_keys:
+          - [lead_id]
+        description: >
+          An unqualified sales prospect. A lead may be converted to an
+          opportunity once it is qualified. The party_id references a core
+          Party record (person or organization) representing the prospect.
+        ai_context:
+          synonyms:
+            - "prospect"
+            - "inbound lead"
+            - "sales lead"
+        fields:
+          - name: lead_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: lead_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: party_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_id
+            description: Foreign key to enterprise_core.party. The prospective customer party.
+            dimension:
+              is_time: false
+
+          - name: source_campaign_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: source_campaign_id
+            description: >
+              Foreign key to enterprise_marketing.campaign (cross-file). The
+              marketing campaign that generated this lead. May be NULL for
+              organically or directly sourced leads.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "lead source"
+                - "campaign source"
+                - "origin"
+
+          - name: created_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: created_date
+            description: Date the lead was created in the system (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "lead date"
+                - "inquiry date"
+
+          - name: lead_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: lead_status
+            description: >
+              Current processing status of the lead.
+              Values: new, contacted, qualified, disqualified, converted.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "status"
+                - "lead stage"
+
+          - name: assigned_to_employee_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: assigned_to_employee_id
+            description: >
+              Foreign key to enterprise_hr.employee (cross-file). The sales
+              representative responsible for following up on this lead.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "sales rep"
+                - "assigned to"
+                - "owner"
+
+      # -----------------------------------------------------------------------
+      # OPPORTUNITY — a qualified sales pursuit with a probability and value
+      # -----------------------------------------------------------------------
+      - name: opportunity
+        source: enterprise.sales.opportunity
+        primary_key: [opportunity_id]
+        unique_keys:
+          - [opportunity_id]
+        description: >
+          A qualified sales pursuit against a customer or prospect. Tracks
+          the estimated value, stage, probability, and expected close date.
+          Forms the core of sales pipeline reporting.
+        ai_context:
+          synonyms:
+            - "deal"
+            - "opportunity"
+            - "pipeline deal"
+            - "sales opportunity"
+        fields:
+          - name: opportunity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: opportunity_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: opportunity_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: opportunity_name
+            description: Short descriptive name for the opportunity (e.g., 'Acme Corp - Platform Expansion Q3').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "deal name"
+                - "opportunity name"
+
+          - name: customer_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: customer_id
+            description: Foreign key to customer. The customer this opportunity is with.
+            dimension:
+              is_time: false
+
+          - name: lead_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: lead_id
+            description: Foreign key to lead. The originating lead, if this opportunity was converted from a lead. May be NULL.
+            dimension:
+              is_time: false
+
+          - name: stage
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: stage
+            description: >
+              Current stage in the sales process.
+              Values: prospecting, qualification, proposal, negotiation,
+              closed-won, closed-lost.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "sales stage"
+                - "pipeline stage"
+                - "deal stage"
+
+          - name: probability_pct
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: probability_pct
+            description: Estimated probability of closing this opportunity (0-100).
+            ai_context:
+              synonyms:
+                - "close probability"
+                - "win probability"
+                - "likelihood"
+
+          - name: estimated_value
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: estimated_value
+            description: Estimated total contract or deal value in currency_code.
+            ai_context:
+              synonyms:
+                - "deal value"
+                - "opportunity value"
+                - "ACV"
+                - "TCV"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for estimated_value.
+            dimension:
+              is_time: false
+
+          - name: expected_close_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: expected_close_date
+            description: Expected date by which this opportunity will be won or lost (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "close date"
+                - "target close"
+                - "expected close"
+
+          - name: assigned_to_employee_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: assigned_to_employee_id
+            description: >
+              Foreign key to enterprise_hr.employee (cross-file). The account
+              executive or sales rep who owns this opportunity.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "account executive"
+                - "AE"
+                - "sales owner"
+                - "opportunity owner"
+
+      # -----------------------------------------------------------------------
+      # SALES_ORDER — confirmed customer order
+      # -----------------------------------------------------------------------
+      - name: sales_order
+        source: enterprise.sales.sales_order
+        primary_key: [order_id]
+        unique_keys:
+          - [order_id]
+          - [order_number]
+        description: >
+          A confirmed customer order. Created when a customer commits to a
+          purchase — either from a won opportunity or directly. The parent
+          record for one or more sales order lines.
+        ai_context:
+          synonyms:
+            - "order"
+            - "customer order"
+            - "SO"
+            - "purchase order from customer"
+        fields:
+          - name: order_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: order_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: order_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: order_number
+            description: Human-readable order reference (e.g., 'SO-2024-08291').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "order number"
+                - "SO number"
+
+          - name: customer_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: customer_id
+            description: Foreign key to customer. The customer who placed this order.
+            dimension:
+              is_time: false
+
+          - name: opportunity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: opportunity_id
+            description: Foreign key to opportunity. The originating sales opportunity. May be NULL for direct orders.
+            dimension:
+              is_time: false
+
+          - name: legal_entity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: legal_entity_id
+            description: Foreign key to enterprise_core.legal_entity. The selling entity.
+            dimension:
+              is_time: false
+
+          - name: order_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: order_date
+            description: Date the order was placed (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "order date"
+                - "booking date"
+                - "purchase date"
+
+          - name: requested_delivery_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: requested_delivery_date
+            description: Date the customer has requested delivery or fulfillment (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "delivery date"
+                - "ship date"
+                - "fulfillment date"
+
+          - name: order_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: order_status
+            description: >
+              Current processing status.
+              Values: draft, confirmed, in-fulfillment, shipped, delivered,
+              cancelled, returned.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "status"
+                - "order status"
+
+          - name: territory_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: territory_id
+            description: Foreign key to sales_territory. The sales territory attributed with this order.
+            dimension:
+              is_time: false
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for all monetary amounts on this order.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # SALES_ORDER_LINE — a single line item on a sales order
+      # -----------------------------------------------------------------------
+      - name: sales_order_line
+        source: enterprise.sales.sales_order_line
+        primary_key: [line_id]
+        unique_keys:
+          - [line_id]
+          - [order_id, line_number]
+        description: >
+          A single product line item on a sales order. Records the product
+          ordered, quantity, agreed unit price, any discount, and the resulting
+          line total.
+        ai_context:
+          synonyms:
+            - "order line"
+            - "order item"
+            - "line item"
+        fields:
+          - name: line_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: order_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: order_id
+            description: Foreign key to sales_order.
+            dimension:
+              is_time: false
+
+          - name: line_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_number
+            description: Sequential line number within the order.
+            dimension:
+              is_time: false
+
+          - name: product_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_id
+            description: Foreign key to enterprise_core.product. The product or service ordered.
+            dimension:
+              is_time: false
+
+          - name: quantity
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: quantity
+            description: Number of units of the product ordered.
+            ai_context:
+              synonyms:
+                - "qty"
+                - "units ordered"
+
+          - name: unit_price
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: unit_price
+            description: Agreed price per unit in the order currency.
+            ai_context:
+              synonyms:
+                - "price"
+                - "selling price"
+
+          - name: discount_pct
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: discount_pct
+            description: Discount percentage applied to the unit price (0-100). 0 = no discount.
+            ai_context:
+              synonyms:
+                - "discount"
+                - "markdown"
+
+          - name: line_amount
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_amount
+            description: >
+              Net line total after discount: quantity * unit_price * (1 - discount_pct / 100).
+              Stored in the order's currency_code.
+            ai_context:
+              synonyms:
+                - "line total"
+                - "extended price"
+                - "net amount"
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: customer_to_territory
+        from: customer
+        to: sales_territory
+        from_columns: [assigned_territory_id]
+        to_columns: [territory_id]
+        ai_context:
+          synonyms:
+            - "customer territory"
+
+      - name: opportunity_to_customer
+        from: opportunity
+        to: customer
+        from_columns: [customer_id]
+        to_columns: [customer_id]
+        ai_context:
+          synonyms:
+            - "opportunity for customer"
+
+      - name: opportunity_to_lead
+        from: opportunity
+        to: lead
+        from_columns: [lead_id]
+        to_columns: [lead_id]
+        ai_context:
+          synonyms:
+            - "converted from lead"
+
+      - name: sales_order_to_customer
+        from: sales_order
+        to: customer
+        from_columns: [customer_id]
+        to_columns: [customer_id]
+        ai_context:
+          synonyms:
+            - "order placed by customer"
+
+      - name: sales_order_to_opportunity
+        from: sales_order
+        to: opportunity
+        from_columns: [opportunity_id]
+        to_columns: [opportunity_id]
+        ai_context:
+          synonyms:
+            - "order from opportunity"
+
+      - name: sales_order_to_territory
+        from: sales_order
+        to: sales_territory
+        from_columns: [territory_id]
+        to_columns: [territory_id]
+        ai_context:
+          synonyms:
+            - "order territory"
+
+      - name: sales_order_line_to_order
+        from: sales_order_line
+        to: sales_order
+        from_columns: [order_id]
+        to_columns: [order_id]
+        ai_context:
+          synonyms:
+            - "line on order"
+
+      - name: territory_to_parent
+        from: sales_territory
+        to: sales_territory
+        from_columns: [parent_territory_id]
+        to_columns: [territory_id]
+        ai_context:
+          synonyms:
+            - "parent territory"
+            - "territory hierarchy"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: pipeline_value
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(opportunity.estimated_value)
+        description: >
+          Total estimated value of all open opportunities in the pipeline.
+          Filter to open stages (exclude closed-won and closed-lost) for
+          current pipeline.
+        ai_context:
+          synonyms:
+            - "pipeline"
+            - "open pipeline"
+            - "sales pipeline value"
+
+      - name: weighted_pipeline_value
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(opportunity.estimated_value * opportunity.probability_pct / 100.0)
+        description: >
+          Pipeline value weighted by probability. A more conservative estimate
+          of expected revenue from open opportunities.
+        ai_context:
+          synonyms:
+            - "weighted pipeline"
+            - "expected value"
+            - "probability-weighted pipeline"
+
+      - name: win_rate
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(CASE WHEN opportunity.stage = 'closed-won' THEN 1 END)
+                * 100.0
+                / NULLIF(COUNT(CASE WHEN opportunity.stage IN ('closed-won','closed-lost') THEN 1 END), 0)
+        description: Percentage of closed opportunities that were won.
+        ai_context:
+          synonyms:
+            - "win rate"
+            - "close rate"
+            - "conversion rate"
+
+      - name: total_order_revenue
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(sales_order_line.line_amount)
+        description: Total booked order revenue across all order lines in scope.
+        ai_context:
+          synonyms:
+            - "bookings"
+            - "order revenue"
+            - "total sales"
+            - "gross revenue"
+
+      - name: average_order_value
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(sales_order_line.line_amount)
+                / NULLIF(COUNT(DISTINCT sales_order_line.order_id), 0)
+        description: Average revenue per sales order.
+        ai_context:
+          synonyms:
+            - "AOV"
+            - "average order size"
+            - "average deal size"
+
+      - name: customer_lifetime_value
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(sales_order_line.line_amount)
+                / NULLIF(COUNT(DISTINCT sales_order.customer_id), 0)
+        description: Average total revenue generated per customer across all orders in scope.
+        ai_context:
+          synonyms:
+            - "CLV"
+            - "LTV"
+            - "lifetime value"
+            - "customer value"

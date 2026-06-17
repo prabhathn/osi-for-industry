@@ -1,0 +1,618 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Enterprise Procurement Semantic Model
+# Domain layer: Procurement & Supply Chain
+#
+# Depends on: enterprise_core.yaml
+#   - supplier.party_id              -> core.party.party_id
+#   - supplier.legal_entity_id       -> core.legal_entity.legal_entity_id
+#   - purchase_order.legal_entity_id -> core.legal_entity.legal_entity_id
+#   - purchase_order_line.product_id -> core.product.product_id
+#   - contract.party_id              -> core.party.party_id
+#   - contract.legal_entity_id       -> core.legal_entity.legal_entity_id
+#
+# OOP inheritance:
+#   Supplier extends Party — holds procurement-role-specific fields only.
+#   Join supplier.party_id = core.party.party_id for name and contact info.
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_procurement
+    description: >
+      Procurement domain model covering supplier management, purchase orders,
+      PO line items, and contract tracking. Supplier is an extension of core
+      Party. Supports multi-entity procurement via legal_entity_id.
+    ai_context:
+      instructions: >
+        This model covers procurement and supply-side spend analytics.
+
+        Procurement flow:
+          supplier -> purchase_order -> purchase_order_line -> product
+
+        Supplier is a role extension of core Party. To get supplier name and
+        contact details, join supplier.party_id to enterprise_core.party.
+
+        Contract covers all party relationship agreements (supplier, customer,
+        employment, partnership). contract.party_id references any party type
+        from enterprise_core.
+
+        Load enterprise_core.yaml with this file to resolve party, product,
+        legal entity, and currency cross-file joins.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # SUPPLIER — extends core Party with procurement-role attributes
+      # -----------------------------------------------------------------------
+      - name: supplier
+        source: enterprise.procurement.supplier
+        primary_key: [supplier_id]
+        unique_keys:
+          - [supplier_id]
+          - [supplier_number]
+          - [party_id]
+        description: >
+          A party from whom the enterprise purchases goods or services. Extends
+          core Party — all name, address, and contact info lives in
+          enterprise_core.party. This dataset holds only supplier-role-specific
+          attributes such as payment terms and status.
+        ai_context:
+          synonyms:
+            - "vendor"
+            - "supplier"
+            - "supplier account"
+            - "contractor"
+        fields:
+          - name: supplier_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: supplier_id
+            description: Surrogate primary key for the supplier role.
+            dimension:
+              is_time: false
+
+          - name: party_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_id
+            description: >
+              Foreign key to enterprise_core.party. Join here to get the
+              supplier's name, address, and contact information.
+            dimension:
+              is_time: false
+
+          - name: legal_entity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: legal_entity_id
+            description: Foreign key to enterprise_core.legal_entity. The enterprise entity that manages this supplier relationship.
+            dimension:
+              is_time: false
+
+          - name: supplier_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: supplier_number
+            description: Human-readable business key assigned by procurement (e.g., 'SUPP-00148').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "vendor ID"
+                - "supplier code"
+
+          - name: supplier_since
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: supplier_since
+            description: Date the party was first approved as a supplier (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "onboarding date"
+                - "approval date"
+
+          - name: payment_terms
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: payment_terms
+            description: >
+              Standard payment terms for invoices from this supplier.
+              Values: net-15, net-30, net-45, net-60, net-90, prepaid, cod.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "terms"
+                - "payment conditions"
+
+          - name: preferred_currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: preferred_currency_code
+            description: ISO 4217 default transaction currency for purchase orders with this supplier.
+            dimension:
+              is_time: false
+
+          - name: supplier_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: supplier_status
+            description: >
+              Approval and activity status of the supplier.
+              Values: active, under-review, suspended, inactive, blocked.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "vendor status"
+                - "approval status"
+
+      # -----------------------------------------------------------------------
+      # PURCHASE_ORDER — a commitment to buy from a supplier
+      # -----------------------------------------------------------------------
+      - name: purchase_order
+        source: enterprise.procurement.purchase_order
+        primary_key: [po_id]
+        unique_keys:
+          - [po_id]
+          - [po_number]
+        description: >
+          A formal commitment by the enterprise to purchase goods or services
+          from a supplier. Header record for one or more purchase order lines.
+        ai_context:
+          synonyms:
+            - "PO"
+            - "purchase order"
+            - "order to supplier"
+            - "buy order"
+        fields:
+          - name: po_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: po_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: po_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: po_number
+            description: Human-readable PO reference number (e.g., 'PO-2024-00912').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "PO number"
+                - "purchase order number"
+
+          - name: supplier_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: supplier_id
+            description: Foreign key to supplier. The supplier from whom goods/services are ordered.
+            dimension:
+              is_time: false
+
+          - name: legal_entity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: legal_entity_id
+            description: Foreign key to enterprise_core.legal_entity. The enterprise entity issuing this PO.
+            dimension:
+              is_time: false
+
+          - name: order_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: order_date
+            description: Date the purchase order was issued (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "PO date"
+                - "issue date"
+
+          - name: expected_delivery_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: expected_delivery_date
+            description: Expected date for delivery or completion of the order (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "delivery date"
+                - "promised date"
+                - "due date"
+
+          - name: po_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: po_status
+            description: >
+              Current processing status.
+              Values: draft, approved, sent, partially-received, received,
+              cancelled, closed.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "status"
+                - "order status"
+
+          - name: total_amount
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: total_amount
+            description: Total committed purchase amount in currency_code.
+            ai_context:
+              synonyms:
+                - "PO value"
+                - "order value"
+                - "total cost"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for all amounts on this PO.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # PURCHASE_ORDER_LINE — a single line item on a purchase order
+      # -----------------------------------------------------------------------
+      - name: purchase_order_line
+        source: enterprise.procurement.purchase_order_line
+        primary_key: [line_id]
+        unique_keys:
+          - [line_id]
+          - [po_id, line_number]
+        description: >
+          A single product or service line item on a purchase order. Records
+          the product, quantity, agreed unit cost, and total line commitment.
+        ai_context:
+          synonyms:
+            - "PO line"
+            - "purchase order line"
+            - "order line item"
+        fields:
+          - name: line_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: po_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: po_id
+            description: Foreign key to purchase_order.
+            dimension:
+              is_time: false
+
+          - name: line_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_number
+            description: Sequential line number within the purchase order.
+            dimension:
+              is_time: false
+
+          - name: product_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_id
+            description: Foreign key to enterprise_core.product. The good or service being purchased.
+            dimension:
+              is_time: false
+
+          - name: quantity
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: quantity
+            description: Quantity of product units ordered.
+            ai_context:
+              synonyms:
+                - "qty"
+                - "ordered quantity"
+
+          - name: unit_cost
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: unit_cost
+            description: Agreed cost per unit in the PO currency.
+            ai_context:
+              synonyms:
+                - "unit price"
+                - "purchase price"
+                - "cost"
+
+          - name: line_amount
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_amount
+            description: Total line commitment (quantity * unit_cost) in the PO currency.
+            ai_context:
+              synonyms:
+                - "line total"
+                - "extended cost"
+                - "line value"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for this line (inherits from PO header).
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # CONTRACT — formal agreement with any party type
+      # -----------------------------------------------------------------------
+      - name: contract
+        source: enterprise.procurement.contract
+        primary_key: [contract_id]
+        unique_keys:
+          - [contract_id]
+          - [contract_number]
+        description: >
+          A formal legal or commercial agreement between the enterprise and any
+          party (supplier, customer, employee, partner). Tracks value, duration,
+          and status. Complements purchase orders (operational) with strategic
+          agreements (commercial terms, MSAs, NDAs, SOWs).
+        ai_context:
+          synonyms:
+            - "agreement"
+            - "MSA"
+            - "SOW"
+            - "SLA agreement"
+            - "NDA"
+            - "vendor contract"
+            - "customer contract"
+        fields:
+          - name: contract_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: contract_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: contract_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: contract_number
+            description: Human-readable contract reference (e.g., 'CTR-2024-00201').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "contract number"
+                - "agreement number"
+                - "reference"
+
+          - name: party_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_id
+            description: >
+              Foreign key to enterprise_core.party. The counterparty to this
+              contract (supplier, customer, employee, or partner).
+            dimension:
+              is_time: false
+
+          - name: legal_entity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: legal_entity_id
+            description: Foreign key to enterprise_core.legal_entity. The enterprise entity that is a party to this contract.
+            dimension:
+              is_time: false
+
+          - name: contract_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: contract_type
+            description: >
+              Category of the contract.
+              Values: supplier, customer, employment, partnership,
+              licensing, nda, maintenance, framework.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "agreement type"
+                - "contract category"
+
+          - name: start_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: start_date
+            description: Effective start date of the contract (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "effective date"
+                - "commencement date"
+
+          - name: end_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: end_date
+            description: Expiration date of the contract (ISO 8601). NULL for evergreen contracts.
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "expiry date"
+                - "termination date"
+                - "renewal date"
+
+          - name: contract_value
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: contract_value
+            description: Total committed value of the contract in currency_code. NULL for contracts with no fixed value (e.g., NDAs).
+            ai_context:
+              synonyms:
+                - "TCV"
+                - "committed value"
+                - "contract amount"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for contract_value.
+            dimension:
+              is_time: false
+
+          - name: contract_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: contract_status
+            description: >
+              Lifecycle status.
+              Values: draft, under-review, active, expired, terminated, renewed.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "status"
+                - "agreement status"
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: purchase_order_to_supplier
+        from: purchase_order
+        to: supplier
+        from_columns: [supplier_id]
+        to_columns: [supplier_id]
+        ai_context:
+          synonyms:
+            - "PO placed with supplier"
+
+      - name: purchase_order_line_to_purchase_order
+        from: purchase_order_line
+        to: purchase_order
+        from_columns: [po_id]
+        to_columns: [po_id]
+        ai_context:
+          synonyms:
+            - "line on purchase order"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: total_spend
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(purchase_order_line.line_amount)
+        description: Total purchase order spend across all PO lines in scope.
+        ai_context:
+          synonyms:
+            - "procurement spend"
+            - "purchase spend"
+            - "total purchasing cost"
+            - "COGS"
+
+      - name: spend_by_supplier
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(purchase_order_line.line_amount)
+        description: >
+          Total spend per supplier. Apply GROUP BY supplier.supplier_id (or
+          party.display_name) to get the breakdown.
+        ai_context:
+          synonyms:
+            - "vendor spend"
+            - "supplier spend"
+            - "spend concentration"
+
+      - name: active_supplier_count
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(DISTINCT CASE WHEN supplier.supplier_status = 'active' THEN supplier.supplier_id END)
+        description: Number of currently active suppliers.
+        ai_context:
+          synonyms:
+            - "vendor count"
+            - "supplier count"
+            - "active vendors"
+
+      - name: po_cycle_time_days
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                AVG(purchase_order.expected_delivery_date - purchase_order.order_date)
+        description: Average number of days between PO issue date and expected delivery date.
+        ai_context:
+          synonyms:
+            - "lead time"
+            - "order lead time"
+            - "procurement cycle time"
+
+      - name: contract_coverage_pct
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(DISTINCT CASE WHEN contract.contract_status = 'active' THEN contract.party_id END)
+                * 100.0
+                / NULLIF(COUNT(DISTINCT supplier.party_id), 0)
+        description: Percentage of active suppliers that have an active contract on file.
+        ai_context:
+          synonyms:
+            - "contract coverage"
+            - "contracted supplier rate"

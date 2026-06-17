@@ -1,0 +1,352 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Vertical: Manufacturing — Production
+# Module: Work orders and production step execution.
+#
+# This module bridges the gap between planned production (BOM, work centres)
+# and finished goods. It tracks work order execution from planned quantities
+# through actual output.
+#
+# Depends on:
+#   - addon_sites.yaml             (production_order.site_id -> site.site_id)
+#   - addon_manufacturing.yaml     (production_step.work_center_id -> work_center.work_center_id)
+#   - enterprise_procurement.yaml  (production_order.product_id -> product.product_id)
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_vertical_manufacturing_production
+    description: >
+      Vertical module for industrial manufacturers tracking production order
+      execution. Covers the work order from planned to actual quantities and
+      dates, and the individual operations (steps) performed at each work centre.
+      Enables on-time production analysis and cycle time measurement.
+    ai_context:
+      instructions: >
+        Use this model for production analytics: yield rates, on-time delivery,
+        and cycle time by product or work centre.
+
+        Data hierarchy:
+          production_order -> production_step (one order, many operations)
+
+        production_order.site_id references addon_sites.site (cross-file).
+        production_step.work_center_id references addon_manufacturing.work_center (cross-file).
+        production_order.product_id references enterprise_procurement.product (cross-file).
+
+        production_order.status values: planned, in-progress, completed, cancelled.
+        production_step.status values: pending, in-progress, completed, skipped.
+
+        On-time = actual_end <= planned_end. Yield = actual_qty / planned_qty.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # PRODUCTION_ORDER — a work order to manufacture a product
+      # -----------------------------------------------------------------------
+      - name: production_order
+        source: enterprise.manufacturing_production.production_order
+        primary_key: [order_id]
+        unique_keys:
+          - [order_id]
+          - [order_number]
+        description: >
+          A manufacturing work order authorising the production of a specific
+          product at a site. Tracks planned vs actual quantities and dates to
+          measure schedule adherence and output yield.
+        ai_context:
+          synonyms:
+            - "work order"
+            - "production run"
+            - "manufacturing order"
+            - "MO"
+        fields:
+          - name: order_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: order_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: order_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: order_number
+            description: Human-readable work order reference (e.g., 'WO-2024-04571').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "WO number"
+                - "work order number"
+
+          - name: product_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_id
+            description: Foreign key to enterprise_procurement.product (cross-file). The finished product being produced.
+            dimension:
+              is_time: false
+
+          - name: bom_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: bom_id
+            description: Foreign key to addon_manufacturing.bom (cross-file). The bill of materials used for this production run.
+            dimension:
+              is_time: false
+
+          - name: site_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: site_id
+            description: Foreign key to addon_sites.site (cross-file). The production facility where this order is executed.
+            dimension:
+              is_time: false
+
+          - name: planned_qty
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: planned_qty
+            description: Target quantity of finished goods to produce.
+            ai_context:
+              synonyms:
+                - "target quantity"
+                - "scheduled quantity"
+
+          - name: actual_qty
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: actual_qty
+            description: Actual quantity of finished goods produced. NULL until production is complete.
+            ai_context:
+              synonyms:
+                - "produced quantity"
+                - "output quantity"
+                - "completed quantity"
+
+          - name: planned_start
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: planned_start
+            description: Scheduled start date for this work order (ISO 8601).
+            dimension:
+              is_time: true
+
+          - name: actual_start
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: actual_start
+            description: Actual date production began (ISO 8601). NULL until started.
+            dimension:
+              is_time: true
+
+          - name: planned_end
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: planned_end
+            description: Scheduled completion date for this work order (ISO 8601).
+            dimension:
+              is_time: true
+
+          - name: actual_end
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: actual_end
+            description: Actual date production completed (ISO 8601). NULL until complete.
+            dimension:
+              is_time: true
+
+          - name: status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: status
+            description: >
+              Work order lifecycle state.
+              Values: planned, in-progress, completed, cancelled.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # PRODUCTION_STEP — an individual operation within a work order
+      # -----------------------------------------------------------------------
+      - name: production_step
+        source: enterprise.manufacturing_production.production_step
+        primary_key: [step_id]
+        unique_keys:
+          - [step_id]
+          - [order_id, sequence_number]
+        description: >
+          A single operation or routing step within a work order, performed
+          at a specific work centre. Tracks planned and actual hours to measure
+          efficiency and identify bottlenecks.
+        ai_context:
+          synonyms:
+            - "operation"
+            - "routing step"
+            - "production step"
+            - "work step"
+        fields:
+          - name: step_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: step_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: order_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: order_id
+            description: Foreign key to production_order. The work order this step belongs to.
+            dimension:
+              is_time: false
+
+          - name: work_center_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: work_center_id
+            description: Foreign key to addon_manufacturing.work_center (cross-file). The machine or work area performing this operation.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "machine"
+                - "work centre"
+                - "resource"
+
+          - name: sequence_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: sequence_number
+            description: Execution order of this step within the work order routing (1 = first step).
+            ai_context:
+              synonyms:
+                - "step number"
+                - "sequence"
+
+          - name: operation_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: operation_name
+            description: Short description of the operation (e.g., 'Cutting', 'Welding', 'Assembly', 'Painting', 'QA Inspection').
+            dimension:
+              is_time: false
+
+          - name: planned_hours
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: planned_hours
+            description: Scheduled machine or labour hours for this operation.
+            ai_context:
+              synonyms:
+                - "standard hours"
+                - "estimated hours"
+
+          - name: actual_hours
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: actual_hours
+            description: Actual hours consumed by this operation. NULL until the step is completed.
+            ai_context:
+              synonyms:
+                - "consumed hours"
+                - "actual labour"
+
+          - name: status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: status
+            description: >
+              Step lifecycle state.
+              Values: pending, in-progress, completed, skipped.
+            dimension:
+              is_time: false
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: step_to_order
+        from: production_step
+        to: production_order
+        from_columns: [order_id]
+        to_columns: [order_id]
+        ai_context:
+          synonyms:
+            - "step belongs to work order"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: production_yield_rate
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(CASE WHEN production_order.status = 'completed'
+                         THEN production_order.actual_qty ELSE 0 END)
+                * 100.0
+                / NULLIF(
+                    SUM(CASE WHEN production_order.status = 'completed'
+                             THEN production_order.planned_qty ELSE 0 END), 0)
+        description: Ratio of actual output to planned quantity across completed work orders. 100% = perfect yield.
+        ai_context:
+          synonyms:
+            - "yield"
+            - "output efficiency"
+            - "production efficiency"
+
+      - name: on_time_production_rate
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(CASE WHEN production_order.status = 'completed'
+                            AND production_order.actual_end <= production_order.planned_end
+                           THEN 1 END)
+                * 100.0
+                / NULLIF(COUNT(CASE WHEN production_order.status = 'completed' THEN 1 END), 0)
+        description: Percentage of completed work orders finished on or before the planned end date.
+        ai_context:
+          synonyms:
+            - "on-time delivery"
+            - "schedule adherence"
+            - "OTD"
+
+      - name: average_cycle_time
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                AVG(CASE WHEN production_order.status = 'completed'
+                         THEN DATEDIFF('day', production_order.actual_start, production_order.actual_end)
+                    END)
+        description: Average number of days from production start to completion across completed work orders.
+        ai_context:
+          synonyms:
+            - "cycle time"
+            - "lead time"
+            - "throughput time"

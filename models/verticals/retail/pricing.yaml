@@ -1,0 +1,392 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Vertical: Retail — Pricing
+# Module: Price books, promotional rules, and dynamic pricing.
+#
+# This module is for retail operators who need to manage multiple price tiers
+# (standard, promotional, clearance, partner) and promotional discounting rules.
+#
+# Depends on: enterprise_procurement.yaml
+#   - price_book_entry.product_id  -> product.product_id
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_vertical_retail_pricing
+    description: >
+      Vertical module for retail pricing management. Defines price books
+      (named sets of prices with effective dates and priorities), the individual
+      product prices within each book, promotional campaigns, and the product-
+      level discount rules that make up those promotions.
+    ai_context:
+      instructions: >
+        Use this model for pricing analytics: effective prices by product, active
+        promotions by channel, promotional uplift, and price book coverage.
+
+        Data hierarchy:
+          price_book -> price_book_entry (one book, many product prices)
+          promotion -> promotion_rule (one promotion, many discount rules)
+
+        price_book.priority determines which book applies when multiple books
+        are valid for a product — lower number = higher priority (1 = highest).
+
+        promotion_rule.promo_type values: pct-off, amount-off, bogo.
+
+        price_book_entry.product_id and promotion_rule.product_id reference
+        enterprise_procurement.product (cross-file).
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # PRICE_BOOK — a named set of prices valid for a date range
+      # -----------------------------------------------------------------------
+      - name: price_book
+        source: enterprise.retail_pricing.price_book
+        primary_key: [book_id]
+        unique_keys:
+          - [book_id]
+          - [book_code]
+        description: >
+          A versioned, date-bounded set of product prices. Used to support
+          standard retail prices, seasonal promotions, clearance events, or
+          partner/employee pricing tiers.
+        ai_context:
+          synonyms:
+            - "price list"
+            - "price sheet"
+            - "rate card"
+        fields:
+          - name: book_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: book_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: book_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: book_code
+            description: Unique short identifier (e.g., 'STD-USD', 'CLEARANCE-Q4', 'PARTNER').
+            dimension:
+              is_time: false
+
+          - name: book_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: book_name
+            description: Human-readable name for the price book.
+            dimension:
+              is_time: false
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for all prices in this book.
+            dimension:
+              is_time: false
+
+          - name: effective_from
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: effective_from
+            description: Date this price book becomes effective (ISO 8601, inclusive).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "valid from"
+                - "start date"
+
+          - name: effective_to
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: effective_to
+            description: Date this price book expires (ISO 8601, inclusive). NULL means open-ended.
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "valid to"
+                - "end date"
+                - "expiry"
+
+          - name: priority
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: priority
+            description: Determines which book takes precedence when multiple books are valid. Lower number = higher priority (1 = highest).
+            ai_context:
+              synonyms:
+                - "rank"
+                - "precedence"
+
+      # -----------------------------------------------------------------------
+      # PRICE_BOOK_ENTRY — a single product price within a book
+      # -----------------------------------------------------------------------
+      - name: price_book_entry
+        source: enterprise.retail_pricing.price_book_entry
+        primary_key: [entry_id]
+        unique_keys:
+          - [entry_id]
+          - [book_id, product_id, min_quantity]
+        description: >
+          The price for one product (or product/quantity tier) within a price
+          book. Supports volume pricing via min_quantity steps.
+        ai_context:
+          synonyms:
+            - "product price"
+            - "price entry"
+            - "price line"
+        fields:
+          - name: entry_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: entry_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: book_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: book_id
+            description: Foreign key to price_book. The book this entry belongs to.
+            dimension:
+              is_time: false
+
+          - name: product_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_id
+            description: Foreign key to enterprise_procurement.product (cross-file). The product being priced.
+            dimension:
+              is_time: false
+
+          - name: unit_price
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: unit_price
+            description: Price per unit for this product in this book's currency.
+            ai_context:
+              synonyms:
+                - "price"
+                - "selling price"
+                - "list price"
+
+          - name: min_quantity
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: min_quantity
+            description: Minimum quantity purchased to qualify for this price tier. Default 1 for no volume tier.
+            ai_context:
+              synonyms:
+                - "minimum order quantity"
+                - "break quantity"
+                - "tier quantity"
+
+      # -----------------------------------------------------------------------
+      # PROMOTION — a time-bound discount campaign
+      # -----------------------------------------------------------------------
+      - name: promotion
+        source: enterprise.retail_pricing.promotion
+        primary_key: [promotion_id]
+        unique_keys:
+          - [promotion_id]
+          - [promotion_code]
+        description: >
+          A named discount campaign (e.g., 'Summer Sale 20% Off', 'Buy One Get One').
+          Promotions are bounded by date and channel, and contain one or more
+          product-level discount rules.
+        ai_context:
+          synonyms:
+            - "sale"
+            - "campaign"
+            - "discount campaign"
+            - "offer"
+        fields:
+          - name: promotion_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: promotion_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: promotion_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: promotion_code
+            description: Unique short identifier for the promotion (e.g., 'SUMMER25', 'BOGO-SHOES').
+            dimension:
+              is_time: false
+
+          - name: promotion_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: promotion_name
+            description: Human-readable campaign name.
+            dimension:
+              is_time: false
+
+          - name: promo_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: promo_type
+            description: >
+              Discount mechanism.
+              Values: pct-off (percentage discount), amount-off (fixed amount off),
+              bogo (buy-one-get-one).
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "discount type"
+                - "offer type"
+
+          - name: start_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: start_date
+            description: Date the promotion becomes active (ISO 8601, inclusive).
+            dimension:
+              is_time: true
+
+          - name: end_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: end_date
+            description: Date the promotion expires (ISO 8601, inclusive).
+            dimension:
+              is_time: true
+
+          - name: channel
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: channel
+            description: >
+              Sales channel(s) where this promotion applies.
+              Values: all, in-store, online, mobile.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "applicable channel"
+
+      # -----------------------------------------------------------------------
+      # PROMOTION_RULE — a product-level discount within a promotion
+      # -----------------------------------------------------------------------
+      - name: promotion_rule
+        source: enterprise.retail_pricing.promotion_rule
+        primary_key: [rule_id]
+        unique_keys:
+          - [rule_id]
+        description: >
+          Defines the specific discount applied to a product or category under a
+          promotion. One promotion may have many rules targeting different products.
+        ai_context:
+          synonyms:
+            - "discount rule"
+            - "promo rule"
+            - "offer rule"
+        fields:
+          - name: rule_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: rule_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: promotion_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: promotion_id
+            description: Foreign key to promotion. The campaign this rule belongs to.
+            dimension:
+              is_time: false
+
+          - name: product_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_id
+            description: Foreign key to enterprise_procurement.product (cross-file). The specific product discounted. NULL if the rule applies to a whole category.
+            dimension:
+              is_time: false
+
+          - name: category_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: category_id
+            description: Foreign key to product category. If set, the rule applies to all products in this category. Ignored when product_id is set.
+            dimension:
+              is_time: false
+
+          - name: discount_pct
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: discount_pct
+            description: Percentage discount (0-100). Used when promo_type = 'pct-off'. NULL otherwise.
+            ai_context:
+              synonyms:
+                - "percentage off"
+                - "percent discount"
+
+          - name: discount_amount
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: discount_amount
+            description: Fixed monetary discount in the promotion's currency. Used when promo_type = 'amount-off'. NULL otherwise.
+            ai_context:
+              synonyms:
+                - "fixed discount"
+                - "amount off"
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: entry_to_price_book
+        from: price_book_entry
+        to: price_book
+        from_columns: [book_id]
+        to_columns: [book_id]
+        ai_context:
+          synonyms:
+            - "entry belongs to price book"
+
+      - name: rule_to_promotion
+        from: promotion_rule
+        to: promotion
+        from_columns: [promotion_id]
+        to_columns: [promotion_id]
+        ai_context:
+          synonyms:
+            - "rule belongs to promotion"

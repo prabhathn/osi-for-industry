@@ -1,0 +1,408 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Add-on: Subscriptions & Entitlements
+# Module: Recurring billing plans, customer subscriptions, and feature entitlements.
+#
+# This module applies to any recurring-revenue business: SaaS, telecom service
+# plans, media streaming, utilities, and subscription retail.
+#
+# Depends on: enterprise_core.yaml
+#   - subscription.customer_id  -> core.party.party_id
+#
+# Referenced by:
+#   - verticals/saas/customer_success.yaml  (renewal_forecast.subscription_id)
+#   - verticals/telecom/subscriber.yaml     (service_line.plan_id -> plan.plan_id)
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_addon_subscriptions
+    description: >
+      Add-on module for recurring-revenue businesses. Defines billing plans,
+      customer subscriptions against those plans, and per-subscription feature
+      entitlements. Applies to SaaS, telecom, media streaming, or any business
+      with repeating charges.
+    ai_context:
+      instructions: >
+        Use this model for subscription analytics: active counts, revenue, churn,
+        and feature utilisation.
+
+        Data hierarchy:
+          plan -> subscription (one plan, many subscribers)
+          subscription -> entitlement (one subscription, many feature limits)
+
+        subscription.customer_id references enterprise_core.party (cross-file).
+        Load enterprise_core.yaml to resolve customer names.
+
+        billing_interval values: monthly, annual, usage-based.
+        subscription.status values: active, cancelled, paused, past-due.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # PLAN — a billing tier or product offering
+      # -----------------------------------------------------------------------
+      - name: plan
+        source: enterprise.subscriptions.plan
+        primary_key: [plan_id]
+        unique_keys:
+          - [plan_id]
+          - [plan_code]
+        description: >
+          A named billing tier or recurring product (e.g., Starter, Professional,
+          Enterprise). Defines the billing interval and base list price.
+        ai_context:
+          synonyms:
+            - "pricing tier"
+            - "product tier"
+            - "billing plan"
+            - "rate plan"
+        fields:
+          - name: plan_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: plan_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: plan_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: plan_code
+            description: Unique short code (e.g., 'STARTER', 'PRO', 'ENT-ANNUAL').
+            dimension:
+              is_time: false
+
+          - name: plan_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: plan_name
+            description: Human-readable plan name shown to customers.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "tier name"
+                - "product name"
+
+          - name: billing_interval
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: billing_interval
+            description: >
+              How often the customer is billed.
+              Values: monthly, annual, usage-based.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "billing cycle"
+                - "payment frequency"
+
+          - name: base_price
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: base_price
+            description: List price per billing interval, before discounts, in the plan's currency.
+            ai_context:
+              synonyms:
+                - "list price"
+                - "rack rate"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for the base price (e.g., USD, EUR, GBP).
+            dimension:
+              is_time: false
+
+          - name: is_active
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: is_active
+            description: Whether this plan is currently available for new subscriptions (true/false).
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # SUBSCRIPTION — a customer's active agreement against a plan
+      # -----------------------------------------------------------------------
+      - name: subscription
+        source: enterprise.subscriptions.subscription
+        primary_key: [subscription_id]
+        unique_keys:
+          - [subscription_id]
+        description: >
+          A customer's recurring agreement to a billing plan. Tracks the full
+          lifecycle from start through renewal or cancellation.
+        ai_context:
+          synonyms:
+            - "customer subscription"
+            - "contract"
+            - "recurring agreement"
+            - "license"
+        fields:
+          - name: subscription_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: subscription_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: customer_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: customer_id
+            description: Foreign key to enterprise_core.party (cross-file). The subscribing customer.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "account"
+                - "subscriber"
+
+          - name: plan_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: plan_id
+            description: Foreign key to plan. The plan this subscription is on.
+            dimension:
+              is_time: false
+
+          - name: start_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: start_date
+            description: Date the subscription became active (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "activation date"
+                - "subscription start"
+
+          - name: end_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: end_date
+            description: Date the subscription ends or ended. NULL for open-ended active subscriptions.
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "expiry date"
+                - "cancellation date"
+                - "term end"
+
+          - name: renewal_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: renewal_date
+            description: Next scheduled renewal date (ISO 8601). NULL for non-renewing or cancelled subscriptions.
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "next renewal"
+                - "anniversary date"
+
+          - name: status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: status
+            description: >
+              Current lifecycle state.
+              Values: active, cancelled, paused, past-due, trial.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "subscription status"
+                - "lifecycle state"
+
+          - name: contracted_value
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: contracted_value
+            description: Total contracted value for the current term (annual or remaining), in currency_code.
+            ai_context:
+              synonyms:
+                - "annual contract value"
+                - "ACV"
+                - "deal value"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for this subscription's billing.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # ENTITLEMENT — a feature or usage limit granted by a subscription
+      # -----------------------------------------------------------------------
+      - name: entitlement
+        source: enterprise.subscriptions.entitlement
+        primary_key: [entitlement_id]
+        unique_keys:
+          - [entitlement_id]
+          - [subscription_id, feature_code]
+        description: >
+          A specific feature, module, or usage limit included in a subscription.
+          Tracks the allowed quantity and how much has been consumed.
+        ai_context:
+          synonyms:
+            - "feature entitlement"
+            - "usage limit"
+            - "license seat"
+            - "entitlement"
+        fields:
+          - name: entitlement_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: entitlement_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: subscription_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: subscription_id
+            description: Foreign key to subscription. The subscription this entitlement belongs to.
+            dimension:
+              is_time: false
+
+          - name: feature_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: feature_code
+            description: Short code identifying the feature or module (e.g., 'SEATS', 'API_CALLS', 'STORAGE_GB').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "feature"
+                - "capability"
+                - "module"
+
+          - name: quantity_limit
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: quantity_limit
+            description: Maximum permitted quantity for this feature. NULL means unlimited.
+            ai_context:
+              synonyms:
+                - "seat limit"
+                - "usage cap"
+                - "max quantity"
+
+          - name: quantity_used
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: quantity_used
+            description: Current consumed quantity for this entitlement. Updated periodically.
+            ai_context:
+              synonyms:
+                - "seats used"
+                - "current usage"
+                - "consumed quantity"
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: subscription_to_plan
+        from: subscription
+        to: plan
+        from_columns: [plan_id]
+        to_columns: [plan_id]
+        ai_context:
+          synonyms:
+            - "subscription is on plan"
+
+      - name: entitlement_to_subscription
+        from: entitlement
+        to: subscription
+        from_columns: [subscription_id]
+        to_columns: [subscription_id]
+        ai_context:
+          synonyms:
+            - "entitlement belongs to subscription"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: active_subscription_count
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(CASE WHEN subscription.status = 'active' THEN 1 END)
+        description: Number of subscriptions currently in active status.
+        ai_context:
+          synonyms:
+            - "active subs"
+            - "live subscriptions"
+
+      - name: monthly_recurring_revenue
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(CASE
+                  WHEN subscription.status = 'active' AND plan.billing_interval = 'monthly'
+                    THEN subscription.contracted_value
+                  WHEN subscription.status = 'active' AND plan.billing_interval = 'annual'
+                    THEN subscription.contracted_value / 12.0
+                  ELSE 0
+                END)
+        description: >
+          Monthly recurring revenue (MRR) — the normalised monthly value of all
+          active subscriptions. Annual contracts are divided by 12.
+        ai_context:
+          synonyms:
+            - "MRR"
+            - "monthly revenue"
+            - "recurring revenue"
+
+      - name: churn_rate
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(CASE WHEN subscription.status = 'cancelled' THEN 1 END)
+                * 100.0
+                / NULLIF(COUNT(subscription.subscription_id), 0)
+        description: Percentage of all subscriptions that are in cancelled status.
+        ai_context:
+          synonyms:
+            - "cancellation rate"
+            - "attrition"
+            - "subscriber churn"

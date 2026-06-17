@@ -1,0 +1,535 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Add-on: Manufacturing / Bill of Materials
+# Module: Product structure, production planning, and shop-floor execution
+#
+# This module is NOT universal — include it for enterprises that manufacture
+# or assemble physical goods: discrete manufacturers, process industries,
+# electronics assembly, food & beverage production, etc.
+#
+# Depends on:
+#   - enterprise_core.yaml    (bill_of_materials.finished_product_id -> core.product)
+#                             (bom_line.component_product_id -> core.product)
+#   - addon_sites.yaml        (work_center.site_id -> sites.site)
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_addon_manufacturing
+    description: >
+      Add-on module for enterprises that manufacture or assemble products.
+      Covers the bill of materials (product structure), work centers (production
+      resources), and work orders (production execution records). Supports
+      both discrete and process manufacturing at a universal level.
+    ai_context:
+      instructions: >
+        Use this model for production analytics: BOM cost rollups, work order
+        scheduling, capacity utilization, and production attainment.
+
+        Data flow:
+          product (finished good) <- bill_of_materials <- bom_line -> product (component)
+          work_center (at site) <- work_order -> bill_of_materials
+
+        bill_of_materials.finished_product_id and bom_line.component_product_id
+        both reference enterprise_core.product. Load enterprise_core.yaml to
+        resolve product details.
+
+        work_center.site_id references enterprise_addon_sites.site. Load
+        addon_sites.yaml for site details.
+
+        BOM version support: multiple versions of a BOM can exist for the same
+        finished_product_id. Use effective_from/effective_to and bom_status =
+        'active' to get the current production BOM.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # BILL_OF_MATERIALS — header defining what a finished product is made of
+      # -----------------------------------------------------------------------
+      - name: bill_of_materials
+        source: enterprise.manufacturing.bill_of_materials
+        primary_key: [bom_id]
+        unique_keys:
+          - [bom_id]
+          - [finished_product_id, bom_version]
+        description: >
+          Header record for a bill of materials — the complete list of
+          components, sub-assemblies, and raw materials required to produce
+          one unit of a finished product. Supports versioning via bom_version
+          and effective date ranges.
+        ai_context:
+          synonyms:
+            - "BOM"
+            - "bill of materials"
+            - "product structure"
+            - "recipe"
+            - "formula"
+        fields:
+          - name: bom_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: bom_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: finished_product_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: finished_product_id
+            description: Foreign key to enterprise_core.product. The product this BOM describes how to make.
+            dimension:
+              is_time: false
+
+          - name: bom_version
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: bom_version
+            description: Version identifier for this BOM (e.g., '1.0', '2.0', 'REV-A').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "revision"
+                - "BOM version"
+                - "version"
+
+          - name: effective_from
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: effective_from
+            description: Date from which this BOM version is valid for production (ISO 8601).
+            dimension:
+              is_time: true
+
+          - name: effective_to
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: effective_to
+            description: Date after which this BOM version is superseded (ISO 8601). NULL for currently active.
+            dimension:
+              is_time: true
+
+          - name: bom_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: bom_status
+            description: >
+              Lifecycle status of this BOM version.
+              Values: draft, active, obsolete.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # BOM_LINE — a single component or sub-assembly within a BOM
+      # -----------------------------------------------------------------------
+      - name: bom_line
+        source: enterprise.manufacturing.bom_line
+        primary_key: [line_id]
+        unique_keys:
+          - [line_id]
+          - [bom_id, sequence_number]
+        description: >
+          A single line in a bill of materials, specifying one component
+          (raw material, sub-assembly, or purchased part) required to produce
+          one unit of the finished product in the parent BOM.
+        ai_context:
+          synonyms:
+            - "BOM component"
+            - "BOM line"
+            - "ingredient"
+            - "component"
+        fields:
+          - name: line_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: bom_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: bom_id
+            description: Foreign key to bill_of_materials.
+            dimension:
+              is_time: false
+
+          - name: sequence_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: sequence_number
+            description: Display order of this component within the BOM.
+            dimension:
+              is_time: false
+
+          - name: component_product_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: component_product_id
+            description: >
+              Foreign key to enterprise_core.product. The component or
+              sub-assembly required. May reference another finished product
+              (supporting multi-level BOM / phantom assemblies).
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "component"
+                - "part"
+                - "ingredient"
+                - "raw material"
+
+          - name: quantity
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: quantity
+            description: Quantity of this component required to produce one unit of the parent finished product.
+            ai_context:
+              synonyms:
+                - "component quantity"
+                - "required quantity"
+
+          - name: unit_of_measure
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: unit_of_measure
+            description: Unit in which the component quantity is measured (e.g., 'each', 'kg', 'liter', 'cm').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "UOM"
+                - "unit"
+
+      # -----------------------------------------------------------------------
+      # WORK_CENTER — a production resource at a site
+      # -----------------------------------------------------------------------
+      - name: work_center
+        source: enterprise.manufacturing.work_center
+        primary_key: [wc_id]
+        unique_keys:
+          - [wc_id]
+          - [site_id, work_center_code]
+        description: >
+          A physical or logical production resource at a manufacturing site
+          where work is performed (machine, workstation, production line,
+          labor pool). Defines available capacity in hours per day.
+        ai_context:
+          synonyms:
+            - "work center"
+            - "machine"
+            - "production line"
+            - "workstation"
+            - "cell"
+        fields:
+          - name: wc_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: wc_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: site_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: site_id
+            description: Foreign key to enterprise_addon_sites.site. The site where this work center is located.
+            dimension:
+              is_time: false
+
+          - name: work_center_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: work_center_code
+            description: Unique code within the site (e.g., 'WC-ASM-01', 'LINE-3').
+            dimension:
+              is_time: false
+
+          - name: work_center_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: work_center_name
+            description: Display name of the work center.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "machine name"
+                - "resource name"
+
+          - name: work_center_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: work_center_type
+            description: >
+              Operational category of the work center.
+              Values: machine, labor, assembly-line, process-cell, inspection, packaging.
+            dimension:
+              is_time: false
+
+          - name: capacity_hours_per_day
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: capacity_hours_per_day
+            description: Available production capacity per business day in hours.
+            ai_context:
+              synonyms:
+                - "capacity"
+                - "available hours"
+                - "rated capacity"
+
+      # -----------------------------------------------------------------------
+      # WORK_ORDER — a production execution record
+      # -----------------------------------------------------------------------
+      - name: work_order
+        source: enterprise.manufacturing.work_order
+        primary_key: [wo_id]
+        unique_keys:
+          - [wo_id]
+          - [wo_number]
+        description: >
+          An instruction to produce a specific quantity of a finished product
+          using a given BOM at a work center. Tracks planned vs. actual
+          quantity and schedule adherence.
+        ai_context:
+          synonyms:
+            - "production order"
+            - "manufacturing order"
+            - "WO"
+            - "shop order"
+        fields:
+          - name: wo_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: wo_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: wo_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: wo_number
+            description: Human-readable work order number (e.g., 'WO-2024-00891').
+            dimension:
+              is_time: false
+
+          - name: bom_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: bom_id
+            description: Foreign key to bill_of_materials. The BOM used for this production run.
+            dimension:
+              is_time: false
+
+          - name: site_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: site_id
+            description: Foreign key to enterprise_addon_sites.site (cross-file). The site where production occurs.
+            dimension:
+              is_time: false
+
+          - name: work_center_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: work_center_id
+            description: Foreign key to work_center. The resource performing the work.
+            dimension:
+              is_time: false
+
+          - name: quantity_planned
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: quantity_planned
+            description: Quantity of finished product planned to be produced.
+            ai_context:
+              synonyms:
+                - "planned quantity"
+                - "order quantity"
+
+          - name: quantity_completed
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: quantity_completed
+            description: Quantity of finished product actually completed and confirmed.
+            ai_context:
+              synonyms:
+                - "actual quantity"
+                - "produced quantity"
+                - "yield"
+
+          - name: scheduled_start
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: scheduled_start
+            description: Planned start date/time for production (ISO 8601).
+            dimension:
+              is_time: true
+
+          - name: scheduled_end
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: scheduled_end
+            description: Planned completion date/time for production (ISO 8601).
+            dimension:
+              is_time: true
+
+          - name: actual_start
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: actual_start
+            description: Actual production start date/time (ISO 8601). NULL if not yet started.
+            dimension:
+              is_time: true
+
+          - name: actual_end
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: actual_end
+            description: Actual production completion date/time (ISO 8601). NULL if not yet completed.
+            dimension:
+              is_time: true
+
+          - name: wo_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: wo_status
+            description: >
+              Current status of the work order.
+              Values: planned, released, in-progress, completed, cancelled.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "status"
+                - "production status"
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: bom_line_to_bill_of_materials
+        from: bom_line
+        to: bill_of_materials
+        from_columns: [bom_id]
+        to_columns: [bom_id]
+        ai_context:
+          synonyms:
+            - "component in BOM"
+
+      - name: work_order_to_bill_of_materials
+        from: work_order
+        to: bill_of_materials
+        from_columns: [bom_id]
+        to_columns: [bom_id]
+        ai_context:
+          synonyms:
+            - "production uses BOM"
+
+      - name: work_order_to_work_center
+        from: work_order
+        to: work_center
+        from_columns: [work_center_id]
+        to_columns: [wc_id]
+        ai_context:
+          synonyms:
+            - "produced at work center"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: production_volume
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(work_order.quantity_completed)
+        description: Total quantity of finished goods produced across all completed work orders in scope.
+        ai_context:
+          synonyms:
+            - "output"
+            - "units produced"
+            - "throughput"
+
+      - name: work_order_completion_rate
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(work_order.quantity_completed) * 100.0
+                / NULLIF(SUM(work_order.quantity_planned), 0)
+        description: Ratio of actual production quantity to planned quantity as a percentage.
+        ai_context:
+          synonyms:
+            - "attainment"
+            - "production attainment"
+            - "schedule attainment"
+            - "fill rate"
+
+      - name: on_time_production_rate
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(CASE WHEN work_order.actual_end <= work_order.scheduled_end
+                              AND work_order.wo_status = 'completed'
+                           THEN 1 END)
+                * 100.0
+                / NULLIF(COUNT(CASE WHEN work_order.wo_status = 'completed' THEN 1 END), 0)
+        description: Percentage of completed work orders finished on or before their scheduled end.
+        ai_context:
+          synonyms:
+            - "on-time production"
+            - "OTIF"
+            - "schedule adherence"
+
+      - name: capacity_utilization_pct
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(work_order.scheduled_end - work_order.scheduled_start)
+                * 100.0
+                / NULLIF(SUM(work_center.capacity_hours_per_day), 0)
+        description: >
+          Approximate percentage of work center capacity consumed by scheduled
+          work orders. Full calculation requires joining to calendar days.
+        ai_context:
+          synonyms:
+            - "capacity utilization"
+            - "machine utilization"
+            - "resource loading"

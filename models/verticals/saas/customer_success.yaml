@@ -1,0 +1,349 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Vertical: SaaS — Customer Success
+# Module: Customer health scoring, CSM assignments, and renewal forecasting.
+#
+# This module is for SaaS businesses tracking customer health and renewal risk.
+#
+# Depends on:
+#   - enterprise_core.yaml      (assignment.customer_id -> party.party_id)
+#   - addon_subscriptions.yaml  (renewal_forecast.subscription_id -> subscription.subscription_id)
+#   - enterprise_hr.yaml        (assignment.employee_id -> employee.employee_id)
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_vertical_saas_customer_success
+    description: >
+      Vertical module for SaaS customer success operations. Tracks which
+      customer success manager (CSM) is assigned to each customer, periodic
+      health scores across usage and engagement dimensions, and renewal
+      forecasts at the subscription level. Enables at-risk identification
+      and renewal pipeline visibility.
+    ai_context:
+      instructions: >
+        Use this model for customer success analytics: health score trends,
+        at-risk accounts, and renewal forecast totals.
+
+        Data hierarchy:
+          success_assignment (customer ↔ CSM mapping)
+          health_score (time-series scores per customer)
+          renewal_forecast (forward-looking renewal view per subscription)
+
+        success_assignment.customer_id and renewal_forecast.subscription_id
+        reference enterprise_core.party and addon_subscriptions.subscription
+        respectively (cross-file).
+
+        health_score.overall_score is 0–100 (100 = healthiest).
+        renewal_forecast.forecast_type values: at-risk, on-track, expansion.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # SUCCESS_ASSIGNMENT — CSM-to-customer mapping
+      # -----------------------------------------------------------------------
+      - name: success_assignment
+        source: enterprise.customer_success.success_assignment
+        primary_key: [assignment_id]
+        unique_keys:
+          - [assignment_id]
+          - [customer_id, assigned_date]
+        description: >
+          Maps a customer to a customer success manager (CSM) for a given period.
+          Tracks coverage tier (e.g., high-touch, tech-touch) which determines
+          the level of proactive engagement the customer receives.
+        ai_context:
+          synonyms:
+            - "CSM assignment"
+            - "account assignment"
+            - "customer manager"
+        fields:
+          - name: assignment_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: assignment_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: customer_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: customer_id
+            description: Foreign key to enterprise_core.party (cross-file). The customer account being managed.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "account"
+                - "customer"
+
+          - name: employee_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: employee_id
+            description: Foreign key to enterprise_hr.employee (cross-file). The CSM assigned to this customer.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "CSM"
+                - "customer success manager"
+                - "account manager"
+
+          - name: assigned_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: assigned_date
+            description: Date this CSM assignment became effective (ISO 8601).
+            dimension:
+              is_time: true
+
+          - name: coverage_tier
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: coverage_tier
+            description: >
+              Level of proactive engagement for this customer.
+              Values: high-touch, low-touch, tech-touch, self-serve.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "engagement model"
+                - "service tier"
+
+          - name: is_current
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: is_current
+            description: Whether this is the customer's current (active) CSM assignment (true/false).
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # HEALTH_SCORE — periodic customer health measurement
+      # -----------------------------------------------------------------------
+      - name: health_score
+        source: enterprise.customer_success.health_score
+        primary_key: [score_id]
+        unique_keys:
+          - [score_id]
+          - [customer_id, score_date]
+        description: >
+          A point-in-time health measurement for a customer across multiple
+          dimensions. Scores are computed periodically (e.g., weekly or monthly)
+          to track account health trends over time.
+        ai_context:
+          synonyms:
+            - "health score"
+            - "account health"
+            - "customer score"
+            - "account score"
+        fields:
+          - name: score_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: score_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: customer_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: customer_id
+            description: Foreign key to enterprise_core.party (cross-file). The customer this score applies to.
+            dimension:
+              is_time: false
+
+          - name: score_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: score_date
+            description: Date this health score was calculated (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "measurement date"
+                - "scoring date"
+
+          - name: overall_score
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: overall_score
+            description: Composite health score 0–100. Higher values indicate healthier customers.
+            ai_context:
+              synonyms:
+                - "health"
+                - "overall health"
+                - "composite score"
+
+          - name: usage_score
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: usage_score
+            description: Score component reflecting product usage depth and frequency (0–100).
+            ai_context:
+              synonyms:
+                - "product adoption"
+                - "feature usage"
+
+          - name: support_score
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: support_score
+            description: Score component reflecting support ticket volume and satisfaction (0–100). Higher means fewer issues.
+            ai_context:
+              synonyms:
+                - "support health"
+                - "ticket score"
+
+          - name: engagement_score
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: engagement_score
+            description: Score component reflecting engagement with the vendor (logins, communications, events attended) (0–100).
+            ai_context:
+              synonyms:
+                - "engagement"
+                - "activity score"
+                - "relationship score"
+
+      # -----------------------------------------------------------------------
+      # RENEWAL_FORECAST — forward-looking renewal prediction per subscription
+      # -----------------------------------------------------------------------
+      - name: renewal_forecast
+        source: enterprise.customer_success.renewal_forecast
+        primary_key: [forecast_id]
+        unique_keys:
+          - [forecast_id]
+          - [subscription_id, forecast_date]
+        description: >
+          A CSM or system-generated forecast for whether a subscription will
+          renew, expand, or churn. Updated regularly as account health changes.
+        ai_context:
+          synonyms:
+            - "renewal forecast"
+            - "renewal prediction"
+            - "churn forecast"
+            - "expansion forecast"
+        fields:
+          - name: forecast_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: forecast_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: subscription_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: subscription_id
+            description: Foreign key to addon_subscriptions.subscription (cross-file). The subscription being forecasted.
+            dimension:
+              is_time: false
+
+          - name: forecast_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: forecast_date
+            description: Date this forecast was recorded (ISO 8601).
+            dimension:
+              is_time: true
+
+          - name: forecast_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: forecast_type
+            description: >
+              Predicted renewal outcome.
+              Values: at-risk, on-track, expansion.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "renewal outcome"
+                - "prediction"
+                - "renewal status"
+
+          - name: forecast_amount
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: forecast_amount
+            description: Forecasted contract value for the upcoming renewal term.
+            ai_context:
+              synonyms:
+                - "expected renewal value"
+                - "forecast ARR"
+
+          - name: notes
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: notes
+            description: Free-text CSM notes explaining the forecast rationale.
+            dimension:
+              is_time: false
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: average_health_score
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: AVG(health_score.overall_score)
+        description: Average overall health score across customers in the selected period. Use the most recent score_date for current health.
+        ai_context:
+          synonyms:
+            - "mean health"
+            - "avg health score"
+            - "portfolio health"
+
+      - name: at_risk_subscription_value
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(CASE WHEN renewal_forecast.forecast_type = 'at-risk'
+                         THEN renewal_forecast.forecast_amount ELSE 0 END)
+        description: Total forecasted renewal value of at-risk subscriptions. A key metric for churn prevention prioritisation.
+        ai_context:
+          synonyms:
+            - "at-risk ARR"
+            - "churn risk value"
+            - "at-risk renewal value"
+
+      - name: renewal_forecast_total
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(renewal_forecast.forecast_amount)
+        description: Total forecasted renewal value across all subscriptions for the selected period.
+        ai_context:
+          synonyms:
+            - "forecasted renewals"
+            - "renewal pipeline"
+            - "expected ARR"

@@ -1,0 +1,419 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Vertical: Manufacturing — Quality
+# Module: Product inspections, defects, and corrective actions.
+#
+# This module covers quality management for any regulated or quality-conscious
+# manufacturer. Generic enough for discrete manufacturing, process manufacturing,
+# or any enterprise with formal QA/QC programmes.
+#
+# Depends on:
+#   - enterprise_procurement.yaml             (inspection.product_id -> product.product_id)
+#   - enterprise_hr.yaml                      (inspection.inspector_employee_id -> employee.employee_id)
+#                                             (corrective_action.owner_employee_id -> employee.employee_id)
+#   - verticals/manufacturing/production.yaml (inspection.production_order_id -> production_order.order_id)
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_vertical_manufacturing_quality
+    description: >
+      Vertical module for manufacturing quality management. Covers inspection
+      events that test product quality, individual defects found during those
+      inspections, and corrective actions raised to address root causes.
+      Applies to any QA programme regardless of specific standard (ISO 9001,
+      IATF 16949, GMP, etc.).
+    ai_context:
+      instructions: >
+        Use this model for quality analytics: pass/fail rates, defect trends,
+        severity distribution, and corrective action closure rates.
+
+        Data hierarchy:
+          inspection -> defect (one inspection, many defects found)
+          defect -> corrective_action (one defect, one or more follow-up actions)
+
+        inspection.product_id references enterprise_procurement.product (cross-file).
+        inspection.production_order_id references vertical_manufacturing_production.production_order (cross-file).
+        inspection.inspector_employee_id and corrective_action.owner_employee_id
+        reference enterprise_hr.employee (cross-file).
+
+        inspection.result values: pass, fail, conditional.
+        defect.severity values: critical, major, minor.
+        corrective_action.status values: open, in-progress, verified, closed.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # INSPECTION — a quality test or review event
+      # -----------------------------------------------------------------------
+      - name: inspection
+        source: enterprise.manufacturing_quality.inspection
+        primary_key: [inspection_id]
+        unique_keys:
+          - [inspection_id]
+          - [inspection_number]
+        description: >
+          A quality inspection event applied to a product or production batch.
+          May be in-process (during production), end-of-line (at completion),
+          or incoming (on received goods). Records the overall pass/fail result.
+        ai_context:
+          synonyms:
+            - "quality check"
+            - "QC inspection"
+            - "audit"
+            - "test"
+        fields:
+          - name: inspection_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: inspection_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: inspection_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: inspection_number
+            description: Human-readable inspection reference (e.g., 'INS-2024-00812').
+            dimension:
+              is_time: false
+
+          - name: product_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_id
+            description: Foreign key to enterprise_procurement.product (cross-file). The product being inspected.
+            dimension:
+              is_time: false
+
+          - name: production_order_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: production_order_id
+            description: Foreign key to vertical_manufacturing_production.production_order (cross-file). The work order this inspection is associated with. NULL for incoming goods inspections.
+            dimension:
+              is_time: false
+
+          - name: inspection_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: inspection_date
+            description: Date the inspection was performed (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "test date"
+                - "check date"
+                - "audit date"
+
+          - name: inspector_employee_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: inspector_employee_id
+            description: Foreign key to enterprise_hr.employee (cross-file). The employee who performed the inspection.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "inspector"
+                - "QC operator"
+                - "auditor"
+
+          - name: inspection_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: inspection_type
+            description: >
+              Stage at which the inspection occurs.
+              Values: incoming, in-process, end-of-line, customer-return.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "inspection stage"
+                - "check type"
+
+          - name: result
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: result
+            description: >
+              Overall outcome of the inspection.
+              Values: pass, fail, conditional (passed with minor observations).
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "outcome"
+                - "QC result"
+                - "test result"
+
+          - name: quantity_inspected
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: quantity_inspected
+            description: Number of units included in this inspection batch.
+            ai_context:
+              synonyms:
+                - "sample size"
+                - "batch size"
+                - "units checked"
+
+      # -----------------------------------------------------------------------
+      # DEFECT — an individual quality issue found during an inspection
+      # -----------------------------------------------------------------------
+      - name: defect
+        source: enterprise.manufacturing_quality.defect
+        primary_key: [defect_id]
+        unique_keys:
+          - [defect_id]
+        description: >
+          A specific quality issue or non-conformance identified during an
+          inspection. Severity indicates the impact on product usability or
+          safety, which drives corrective action priority.
+        ai_context:
+          synonyms:
+            - "non-conformance"
+            - "quality issue"
+            - "finding"
+            - "defect"
+        fields:
+          - name: defect_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: defect_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: inspection_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: inspection_id
+            description: Foreign key to inspection. The inspection event where this defect was found.
+            dimension:
+              is_time: false
+
+          - name: defect_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: defect_code
+            description: Standardised defect classification code (e.g., 'DIM-001' for dimensional non-conformance).
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "defect type"
+                - "issue code"
+
+          - name: defect_description
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: defect_description
+            description: Free-text description of the specific defect observed.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "issue description"
+                - "finding description"
+
+          - name: quantity_affected
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: quantity_affected
+            description: Number of units affected by this defect within the inspection batch.
+            ai_context:
+              synonyms:
+                - "defective units"
+                - "affected units"
+                - "reject count"
+
+          - name: severity
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: severity
+            description: >
+              Impact level of the defect on product function or safety.
+              Values: critical (safety/functional failure), major (significant degradation),
+              minor (cosmetic or negligible impact).
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "defect severity"
+                - "issue severity"
+                - "criticality"
+
+      # -----------------------------------------------------------------------
+      # CORRECTIVE_ACTION — a follow-up action to address a defect's root cause
+      # -----------------------------------------------------------------------
+      - name: corrective_action
+        source: enterprise.manufacturing_quality.corrective_action
+        primary_key: [action_id]
+        unique_keys:
+          - [action_id]
+        description: >
+          A defined action to investigate, contain, and eliminate the root cause
+          of a defect. Tracks the responsible owner, target due date, and
+          completion verification.
+        ai_context:
+          synonyms:
+            - "CAPA"
+            - "corrective action"
+            - "corrective and preventive action"
+            - "root cause action"
+        fields:
+          - name: action_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: action_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: defect_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: defect_id
+            description: Foreign key to defect. The defect this action addresses.
+            dimension:
+              is_time: false
+
+          - name: owner_employee_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: owner_employee_id
+            description: Foreign key to enterprise_hr.employee (cross-file). The employee responsible for implementing this action.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "responsible person"
+                - "action owner"
+
+          - name: description
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: description
+            description: Description of the corrective action to be taken.
+            dimension:
+              is_time: false
+
+          - name: due_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: due_date
+            description: Target date by which the corrective action must be completed (ISO 8601).
+            dimension:
+              is_time: true
+
+          - name: completed_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: completed_date
+            description: Date the corrective action was implemented and verified (ISO 8601). NULL while open.
+            dimension:
+              is_time: true
+
+          - name: status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: status
+            description: >
+              Lifecycle state of the corrective action.
+              Values: open, in-progress, verified, closed.
+            dimension:
+              is_time: false
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: defect_to_inspection
+        from: defect
+        to: inspection
+        from_columns: [inspection_id]
+        to_columns: [inspection_id]
+        ai_context:
+          synonyms:
+            - "defect found in inspection"
+
+      - name: corrective_action_to_defect
+        from: corrective_action
+        to: defect
+        from_columns: [defect_id]
+        to_columns: [defect_id]
+        ai_context:
+          synonyms:
+            - "action addresses defect"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: first_pass_yield
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(CASE WHEN inspection.result = 'pass' THEN 1 END)
+                * 100.0
+                / NULLIF(COUNT(inspection.inspection_id), 0)
+        description: Percentage of inspections with a passing result on first attempt. Key indicator of process quality.
+        ai_context:
+          synonyms:
+            - "FPY"
+            - "pass rate"
+            - "first-time quality"
+
+      - name: defect_rate
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(defect.quantity_affected) * 100.0
+                / NULLIF(SUM(inspection.quantity_inspected), 0)
+        description: Percentage of inspected units found to have at least one defect. Lower is better.
+        ai_context:
+          synonyms:
+            - "defect percentage"
+            - "rejection rate"
+            - "non-conformance rate"
+
+      - name: open_corrective_action_count
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(CASE WHEN corrective_action.status IN ('open','in-progress') THEN 1 END)
+        description: Number of corrective actions not yet closed or verified. High values indicate unresolved quality issues.
+        ai_context:
+          synonyms:
+            - "open CAPAs"
+            - "open actions"
+            - "outstanding corrective actions"

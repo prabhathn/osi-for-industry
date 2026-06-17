@@ -1,0 +1,1205 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Enterprise Finance Semantic Model
+# Domain layer: Finance & Accounting
+#
+# Depends on: enterprise_core.yaml
+#   - gl_account.legal_entity_id      -> core.legal_entity.legal_entity_id
+#   - cost_center.legal_entity_id     -> core.legal_entity.legal_entity_id
+#   - fiscal_period.legal_entity_id   -> core.legal_entity.legal_entity_id
+#   - journal_entry.legal_entity_id   -> core.legal_entity.legal_entity_id
+#   - invoice.party_id                -> core.party.party_id
+#   - invoice.legal_entity_id         -> core.legal_entity.legal_entity_id
+#   - invoice_line.product_id         -> core.product.product_id
+#   - journal_line.currency_code      -> core.currency.currency_code
+#
+# Cross-file relationships encoded in ai_context only.
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_finance
+    description: >
+      Finance and accounting domain model covering the chart of accounts,
+      general ledger, cost centers, fiscal periods, journal entries, budgets,
+      accounts payable/receivable invoicing, and payments. Supports multi-entity
+      accounting via legal_entity_id on all relevant datasets.
+    ai_context:
+      instructions: >
+        This model covers financial accounting and reporting. Key concepts:
+
+        General Ledger flow:
+          fiscal_period -> journal_entry -> journal_line -> gl_account + cost_center
+
+        Invoicing flow (AP and AR):
+          invoice (invoice_type = 'AR' for customer, 'AP' for supplier)
+          -> invoice_line -> product (cross-file: enterprise_core.product)
+          -> payment
+
+        Multi-entity: all datasets include legal_entity_id. Filter by
+        legal_entity_id or aggregate across entities as needed.
+
+        To get party name for an invoice, join invoice.party_id to
+        enterprise_core.party.party_id (load enterprise_core.yaml).
+
+        account_type values: asset, liability, equity, revenue, expense.
+        Use account_type to build income statement (revenue, expense) or
+        balance sheet (asset, liability, equity) views.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # GL_ACCOUNT — chart of accounts
+      # -----------------------------------------------------------------------
+      - name: gl_account
+        source: enterprise.finance.gl_account
+        primary_key: [account_id]
+        unique_keys:
+          - [account_id]
+          - [account_code, legal_entity_id]
+        description: >
+          A single account in the chart of accounts. Supports a hierarchical
+          structure via parent_account_id (e.g., account group -> account).
+          account_type drives financial statement classification.
+        ai_context:
+          synonyms:
+            - "account"
+            - "GL account"
+            - "chart of accounts"
+            - "COA"
+        fields:
+          - name: account_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: account_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: account_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: account_code
+            description: Unique account number within the legal entity (e.g., '4000', '6100-01').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "account number"
+                - "GL code"
+
+          - name: account_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: account_name
+            description: Descriptive name of the account (e.g., 'Revenue - Software Licenses').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "account description"
+                - "account label"
+
+          - name: account_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: account_type
+            description: >
+              Financial statement classification of the account.
+              Values: asset, liability, equity, revenue, expense.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "account category"
+                - "financial statement type"
+
+          - name: parent_account_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: parent_account_id
+            description: Self-referencing FK for account hierarchy. NULL for top-level accounts.
+            dimension:
+              is_time: false
+
+          - name: legal_entity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: legal_entity_id
+            description: Foreign key to enterprise_core.legal_entity. The entity this account belongs to.
+            dimension:
+              is_time: false
+
+          - name: is_active
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: is_active
+            description: TRUE if this account is currently active and postable.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # COST_CENTER — sub-organizational financial unit
+      # -----------------------------------------------------------------------
+      - name: cost_center
+        source: enterprise.finance.cost_center
+        primary_key: [cost_center_id]
+        unique_keys:
+          - [cost_center_id]
+          - [cost_center_code, legal_entity_id]
+        description: >
+          A financial reporting unit within the enterprise used for cost
+          allocation and budget management. Typically maps 1:1 or many:1 to
+          departments in HR.
+        ai_context:
+          synonyms:
+            - "CC"
+            - "cost centre"
+            - "profit center"
+            - "business unit"
+        fields:
+          - name: cost_center_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: cost_center_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: cost_center_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: cost_center_code
+            description: Unique short code (e.g., 'CC-ENG-01', 'CC-SALES-US').
+            dimension:
+              is_time: false
+
+          - name: cost_center_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: cost_center_name
+            description: Display name of the cost center.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "cost center"
+                - "CC name"
+
+          - name: legal_entity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: legal_entity_id
+            description: Foreign key to enterprise_core.legal_entity.
+            dimension:
+              is_time: false
+
+          - name: department_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: department_id
+            description: >
+              Foreign key to enterprise_hr.department (cross-file). Links the
+              cost center to its operational department for combined HR+Finance
+              reporting.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # FISCAL_PERIOD — accounting period definition per legal entity
+      # -----------------------------------------------------------------------
+      - name: fiscal_period
+        source: enterprise.finance.fiscal_period
+        primary_key: [period_id]
+        unique_keys:
+          - [period_id]
+          - [legal_entity_id, fiscal_year, period_number]
+        description: >
+          Defines the accounting periods (months, quarters, years) for a legal
+          entity. Periods may not align with calendar months for companies with
+          non-calendar fiscal years (e.g., fiscal year ending June 30).
+        ai_context:
+          synonyms:
+            - "accounting period"
+            - "fiscal month"
+            - "fiscal quarter"
+            - "financial period"
+        fields:
+          - name: period_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: period_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: legal_entity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: legal_entity_id
+            description: Foreign key to enterprise_core.legal_entity.
+            dimension:
+              is_time: false
+
+          - name: fiscal_year
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: fiscal_year
+            description: The fiscal year this period belongs to (e.g., 2024).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "FY"
+                - "financial year"
+
+          - name: period_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: period_number
+            description: Sequential period number within the fiscal year (1-12 for monthly, 1-4 for quarterly).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "month number"
+                - "period"
+
+          - name: period_start
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: period_start
+            description: First calendar date of this fiscal period.
+            dimension:
+              is_time: true
+
+          - name: period_end
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: period_end
+            description: Last calendar date of this fiscal period.
+            dimension:
+              is_time: true
+
+          - name: period_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: period_status
+            description: >
+              Controls whether posting is allowed.
+              Values: open, closed, future.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "period open/closed"
+                - "posting status"
+
+      # -----------------------------------------------------------------------
+      # JOURNAL_ENTRY — header record for a GL posting
+      # -----------------------------------------------------------------------
+      - name: journal_entry
+        source: enterprise.finance.journal_entry
+        primary_key: [entry_id]
+        unique_keys:
+          - [entry_id]
+          - [entry_number]
+        description: >
+          Header record for a general ledger posting. One journal entry
+          contains two or more journal lines that must balance (debits = credits).
+        ai_context:
+          synonyms:
+            - "journal"
+            - "GL posting"
+            - "accounting entry"
+        fields:
+          - name: entry_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: entry_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: entry_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: entry_number
+            description: Human-readable journal entry reference number (e.g., 'JE-2024-00412').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "journal number"
+                - "JE number"
+
+          - name: legal_entity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: legal_entity_id
+            description: Foreign key to enterprise_core.legal_entity.
+            dimension:
+              is_time: false
+
+          - name: entry_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: entry_date
+            description: Date the transaction occurred (accounting date, ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "posting date"
+                - "transaction date"
+
+          - name: period_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: period_id
+            description: Foreign key to fiscal_period.
+            dimension:
+              is_time: false
+
+          - name: description
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: description
+            description: Free-text description of the journal entry purpose.
+            dimension:
+              is_time: false
+
+          - name: posted_by_employee_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: posted_by_employee_id
+            description: Foreign key to enterprise_hr.employee. The employee who posted this entry.
+            dimension:
+              is_time: false
+
+          - name: entry_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: entry_status
+            description: >
+              Processing status of the entry.
+              Values: draft, posted, reversed, void.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # JOURNAL_LINE — debit or credit line within a journal entry
+      # -----------------------------------------------------------------------
+      - name: journal_line
+        source: enterprise.finance.journal_line
+        primary_key: [line_id]
+        unique_keys:
+          - [line_id]
+          - [entry_id, line_number]
+        description: >
+          A single debit or credit line within a journal entry. Each line is
+          posted to one GL account and optionally one cost center. A journal
+          entry's lines must sum to zero (total debits = total credits).
+        ai_context:
+          synonyms:
+            - "GL line"
+            - "journal line"
+            - "debit"
+            - "credit"
+        fields:
+          - name: line_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: entry_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: entry_id
+            description: Foreign key to journal_entry.
+            dimension:
+              is_time: false
+
+          - name: line_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_number
+            description: Sequential line number within the journal entry.
+            dimension:
+              is_time: false
+
+          - name: account_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: account_id
+            description: Foreign key to gl_account. The account being debited or credited.
+            dimension:
+              is_time: false
+
+          - name: cost_center_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: cost_center_id
+            description: Foreign key to cost_center. May be NULL for balance sheet accounts.
+            dimension:
+              is_time: false
+
+          - name: debit_amount
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: debit_amount
+            description: Debit amount in currency_code. 0 if this is a credit line.
+            ai_context:
+              synonyms:
+                - "debit"
+                - "DR"
+
+          - name: credit_amount
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: credit_amount
+            description: Credit amount in currency_code. 0 if this is a debit line.
+            ai_context:
+              synonyms:
+                - "credit"
+                - "CR"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for this line amount.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # BUDGET — planned financial amount per account/cost center/period
+      # -----------------------------------------------------------------------
+      - name: budget
+        source: enterprise.finance.budget
+        primary_key: [budget_id]
+        unique_keys:
+          - [budget_id]
+          - [account_id, cost_center_id, period_id, budget_version]
+        description: >
+          Planned financial amount for a specific GL account and cost center in
+          a given fiscal period. Supports multiple versions (e.g., original,
+          revised) for variance analysis.
+        ai_context:
+          synonyms:
+            - "plan"
+            - "forecast"
+            - "budget target"
+        fields:
+          - name: budget_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: budget_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: account_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: account_id
+            description: Foreign key to gl_account.
+            dimension:
+              is_time: false
+
+          - name: cost_center_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: cost_center_id
+            description: Foreign key to cost_center.
+            dimension:
+              is_time: false
+
+          - name: period_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: period_id
+            description: Foreign key to fiscal_period.
+            dimension:
+              is_time: false
+
+          - name: budget_version
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: budget_version
+            description: >
+              Version label for this budget. Values: original, revised, forecast.
+            dimension:
+              is_time: false
+
+          - name: budgeted_amount
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: budgeted_amount
+            description: The planned amount for this account/period, in currency_code.
+            ai_context:
+              synonyms:
+                - "planned amount"
+                - "target"
+                - "budget"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # INVOICE — accounts payable and accounts receivable header
+      # -----------------------------------------------------------------------
+      - name: invoice
+        source: enterprise.finance.invoice
+        primary_key: [invoice_id]
+        unique_keys:
+          - [invoice_id]
+          - [invoice_number, legal_entity_id]
+        description: >
+          Header record for both accounts payable (AP) invoices from suppliers
+          and accounts receivable (AR) invoices to customers. The invoice_type
+          field distinguishes AP from AR. party_id references the supplier or
+          customer party (cross-file: enterprise_core.party).
+        ai_context:
+          synonyms:
+            - "bill"
+            - "invoice"
+            - "AP invoice"
+            - "AR invoice"
+            - "vendor bill"
+            - "customer invoice"
+        fields:
+          - name: invoice_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: invoice_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: invoice_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: invoice_number
+            description: Human-readable invoice reference number (e.g., 'INV-2024-00892').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "invoice number"
+                - "bill number"
+
+          - name: invoice_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: invoice_type
+            description: >
+              Distinguishes payable from receivable invoices.
+              Values: AP (accounts payable), AR (accounts receivable).
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "payable or receivable"
+                - "AP or AR"
+
+          - name: legal_entity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: legal_entity_id
+            description: Foreign key to enterprise_core.legal_entity. The entity issuing or receiving the invoice.
+            dimension:
+              is_time: false
+
+          - name: party_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_id
+            description: >
+              Foreign key to enterprise_core.party. For AP = the supplier party;
+              for AR = the customer party.
+            dimension:
+              is_time: false
+
+          - name: invoice_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: invoice_date
+            description: Date the invoice was issued (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "invoice date"
+                - "bill date"
+
+          - name: due_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: due_date
+            description: Date by which payment is due (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "payment due date"
+                - "due date"
+
+          - name: total_amount
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: total_amount
+            description: Total invoice amount in currency_code (including tax where applicable).
+            ai_context:
+              synonyms:
+                - "invoice total"
+                - "invoice amount"
+                - "billed amount"
+
+          - name: paid_amount
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: paid_amount
+            description: Amount paid to date. outstanding_amount = total_amount - paid_amount.
+            ai_context:
+              synonyms:
+                - "amount paid"
+                - "payments applied"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for all amount fields.
+            dimension:
+              is_time: false
+
+          - name: invoice_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: invoice_status
+            description: >
+              Lifecycle status of the invoice.
+              Values: draft, approved, partially-paid, paid, overdue, void.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "payment status"
+                - "status"
+
+      # -----------------------------------------------------------------------
+      # INVOICE_LINE — line item on an invoice
+      # -----------------------------------------------------------------------
+      - name: invoice_line
+        source: enterprise.finance.invoice_line
+        primary_key: [line_id]
+        unique_keys:
+          - [line_id]
+          - [invoice_id, line_number]
+        description: >
+          A single line item on an invoice. Links to a product (goods or service
+          delivered) and optionally to a GL account for direct coding.
+        ai_context:
+          synonyms:
+            - "invoice item"
+            - "line item"
+            - "bill line"
+        fields:
+          - name: line_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: invoice_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: invoice_id
+            description: Foreign key to invoice.
+            dimension:
+              is_time: false
+
+          - name: line_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_number
+            description: Sequential line number within the invoice.
+            dimension:
+              is_time: false
+
+          - name: product_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_id
+            description: >
+              Foreign key to enterprise_core.product. The good or service being
+              invoiced. May be NULL for free-text line items.
+            dimension:
+              is_time: false
+
+          - name: line_description
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_description
+            description: Free-text description of the line item (used when product_id is NULL or for additional context).
+            dimension:
+              is_time: false
+
+          - name: quantity
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: quantity
+            description: Quantity of product or service units on this line.
+            ai_context:
+              synonyms:
+                - "qty"
+                - "units"
+
+          - name: unit_price
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: unit_price
+            description: Price per unit in currency_code (from the invoice's currency).
+            ai_context:
+              synonyms:
+                - "rate"
+                - "unit cost"
+
+          - name: line_amount
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_amount
+            description: Total line amount (quantity * unit_price) in currency_code.
+            ai_context:
+              synonyms:
+                - "line total"
+                - "extended amount"
+
+          - name: gl_account_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: gl_account_id
+            description: Foreign key to gl_account. Direct GL coding for this line item.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # PAYMENT — payment applied against an invoice
+      # -----------------------------------------------------------------------
+      - name: payment
+        source: enterprise.finance.payment
+        primary_key: [payment_id]
+        unique_keys:
+          - [payment_id]
+          - [payment_reference]
+        description: >
+          A payment transaction applied to one or more invoices. Tracks when,
+          how, and how much was paid.
+        ai_context:
+          synonyms:
+            - "payment"
+            - "receipt"
+            - "remittance"
+            - "disbursement"
+        fields:
+          - name: payment_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: payment_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: invoice_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: invoice_id
+            description: Foreign key to invoice. The invoice this payment is applied to.
+            dimension:
+              is_time: false
+
+          - name: payment_reference
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: payment_reference
+            description: External reference (check number, wire transfer ID, transaction ID).
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "reference number"
+                - "check number"
+                - "transaction ID"
+
+          - name: payment_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: payment_date
+            description: Date the payment was made or received (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "date paid"
+                - "payment date"
+
+          - name: amount
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: amount
+            description: Amount paid in currency_code.
+            ai_context:
+              synonyms:
+                - "payment amount"
+                - "amount paid"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for the payment amount.
+            dimension:
+              is_time: false
+
+          - name: payment_method
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: payment_method
+            description: >
+              Method used for the payment.
+              Values: bank-transfer, check, credit-card, direct-debit, cash, other.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "payment type"
+                - "method of payment"
+
+          - name: payment_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: payment_status
+            description: >
+              Processing status.
+              Values: pending, cleared, returned, void.
+            dimension:
+              is_time: false
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: journal_entry_to_fiscal_period
+        from: journal_entry
+        to: fiscal_period
+        from_columns: [period_id]
+        to_columns: [period_id]
+        ai_context:
+          synonyms:
+            - "posted in period"
+
+      - name: journal_line_to_journal_entry
+        from: journal_line
+        to: journal_entry
+        from_columns: [entry_id]
+        to_columns: [entry_id]
+        ai_context:
+          synonyms:
+            - "line belongs to entry"
+
+      - name: journal_line_to_gl_account
+        from: journal_line
+        to: gl_account
+        from_columns: [account_id]
+        to_columns: [account_id]
+        ai_context:
+          synonyms:
+            - "posted to account"
+
+      - name: journal_line_to_cost_center
+        from: journal_line
+        to: cost_center
+        from_columns: [cost_center_id]
+        to_columns: [cost_center_id]
+        ai_context:
+          synonyms:
+            - "charged to cost center"
+
+      - name: budget_to_gl_account
+        from: budget
+        to: gl_account
+        from_columns: [account_id]
+        to_columns: [account_id]
+        ai_context:
+          synonyms:
+            - "budget for account"
+
+      - name: budget_to_fiscal_period
+        from: budget
+        to: fiscal_period
+        from_columns: [period_id]
+        to_columns: [period_id]
+        ai_context:
+          synonyms:
+            - "budget period"
+
+      - name: budget_to_cost_center
+        from: budget
+        to: cost_center
+        from_columns: [cost_center_id]
+        to_columns: [cost_center_id]
+        ai_context:
+          synonyms:
+            - "budget for cost center"
+
+      - name: invoice_line_to_invoice
+        from: invoice_line
+        to: invoice
+        from_columns: [invoice_id]
+        to_columns: [invoice_id]
+        ai_context:
+          synonyms:
+            - "line on invoice"
+
+      - name: invoice_line_to_gl_account
+        from: invoice_line
+        to: gl_account
+        from_columns: [gl_account_id]
+        to_columns: [account_id]
+        ai_context:
+          synonyms:
+            - "invoice line GL coding"
+
+      - name: payment_to_invoice
+        from: payment
+        to: invoice
+        from_columns: [invoice_id]
+        to_columns: [invoice_id]
+        ai_context:
+          synonyms:
+            - "payment applied to invoice"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: total_revenue
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(CASE WHEN gl_account.account_type = 'revenue'
+                         THEN journal_line.credit_amount - journal_line.debit_amount
+                         ELSE 0 END)
+        description: Total revenue recognized in the period. Derived from journal lines posted to revenue accounts.
+        ai_context:
+          synonyms:
+            - "revenue"
+            - "sales"
+            - "income"
+            - "top line"
+
+      - name: total_expenses
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(CASE WHEN gl_account.account_type = 'expense'
+                         THEN journal_line.debit_amount - journal_line.credit_amount
+                         ELSE 0 END)
+        description: Total expenses recognized in the period. Derived from journal lines posted to expense accounts.
+        ai_context:
+          synonyms:
+            - "expenses"
+            - "costs"
+            - "operating expenses"
+            - "OPEX"
+
+      - name: net_income
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(CASE WHEN gl_account.account_type = 'revenue'
+                         THEN journal_line.credit_amount - journal_line.debit_amount
+                         WHEN gl_account.account_type = 'expense'
+                         THEN journal_line.debit_amount - journal_line.credit_amount
+                         ELSE 0 END)
+        description: Net income (revenue minus expenses) for the period.
+        ai_context:
+          synonyms:
+            - "profit"
+            - "net profit"
+            - "bottom line"
+            - "earnings"
+
+      - name: total_ar_outstanding
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(CASE WHEN invoice.invoice_type = 'AR'
+                         THEN invoice.total_amount - invoice.paid_amount
+                         ELSE 0 END)
+        description: Total outstanding accounts receivable balance (unpaid AR invoice amounts).
+        ai_context:
+          synonyms:
+            - "AR balance"
+            - "receivables"
+            - "outstanding receivables"
+            - "amount owed by customers"
+
+      - name: total_ap_outstanding
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(CASE WHEN invoice.invoice_type = 'AP'
+                         THEN invoice.total_amount - invoice.paid_amount
+                         ELSE 0 END)
+        description: Total outstanding accounts payable balance (unpaid AP invoice amounts).
+        ai_context:
+          synonyms:
+            - "AP balance"
+            - "payables"
+            - "outstanding payables"
+            - "amount owed to suppliers"
+
+      - name: budget_variance
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(journal_line.debit_amount - journal_line.credit_amount)
+                - SUM(budget.budgeted_amount)
+        description: >
+          Actual spending versus budgeted amount. Positive = over budget;
+          negative = under budget. Requires joining journal_line to gl_account
+          and budget on the same account and period.
+        ai_context:
+          synonyms:
+            - "variance"
+            - "budget vs actual"
+            - "over/under budget"
+
+      - name: days_sales_outstanding
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(CASE WHEN invoice.invoice_type = 'AR'
+                         THEN invoice.total_amount - invoice.paid_amount
+                         ELSE 0 END)
+                / NULLIF(SUM(CASE WHEN invoice.invoice_type = 'AR'
+                                  THEN invoice.total_amount
+                                  ELSE 0 END), 0) * 90
+        description: >
+          Approximate days sales outstanding (DSO): ratio of outstanding AR to
+          total AR invoiced, scaled to a 90-day window. A lower value is better.
+        ai_context:
+          synonyms:
+            - "DSO"
+            - "days to collect"
+            - "collection period"
+
+      - name: days_payable_outstanding
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(CASE WHEN invoice.invoice_type = 'AP'
+                         THEN invoice.total_amount - invoice.paid_amount
+                         ELSE 0 END)
+                / NULLIF(SUM(CASE WHEN invoice.invoice_type = 'AP'
+                                  THEN invoice.total_amount
+                                  ELSE 0 END), 0) * 90
+        description: >
+          Approximate days payable outstanding (DPO): ratio of outstanding AP to
+          total AP invoiced, scaled to a 90-day window. A higher value indicates
+          longer time to pay suppliers.
+        ai_context:
+          synonyms:
+            - "DPO"
+            - "days to pay"
+            - "payment period"

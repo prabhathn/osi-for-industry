@@ -1,0 +1,550 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Add-on: Projects
+# Module: Project-based work management — projects, tasks, and resource allocation
+#
+# This module is NOT universal — include it for enterprises that plan, execute,
+# and track discrete bodies of work: professional services firms, consulting,
+# engineering, software development, internal capital projects (capex), etc.
+#
+# Depends on: enterprise_core.yaml
+#   - project.legal_entity_id        -> core.legal_entity.legal_entity_id
+#
+# Cross-references (cross-file, encoded in ai_context):
+#   - project.customer_id            -> enterprise_sales.customer.customer_id
+#   - project_task.assigned_to_employee_id -> enterprise_hr.employee.employee_id
+#   - project_resource.employee_id   -> enterprise_hr.employee.employee_id
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_addon_projects
+    description: >
+      Add-on module for enterprises that plan and deliver discrete projects.
+      Covers project definitions (internal or client-facing), hierarchical task
+      breakdown structures, and resource allocation. Supports both cost and
+      time tracking at the task and resource level.
+    ai_context:
+      instructions: >
+        Use this model for project performance analytics: budget vs. actual,
+        schedule adherence, and resource utilization.
+
+        Data flow:
+          project -> project_task (hierarchy via parent_task_id)
+          project -> project_resource -> employee (cross-file: enterprise_hr)
+
+        project.customer_id is optional (NULL for internal projects). When
+        present, join to enterprise_sales.customer.customer_id for client info.
+
+        project_task supports unlimited hierarchy depth via parent_task_id
+        (work breakdown structure / WBS).
+
+        To get employee names, join project_resource.employee_id to
+        enterprise_hr.employee.employee_id.
+
+        Load enterprise_core.yaml, enterprise_sales.yaml, and
+        enterprise_hr.yaml alongside this file for full cross-file resolution.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # PROJECT — a discrete body of work with a defined scope and budget
+      # -----------------------------------------------------------------------
+      - name: project
+        source: enterprise.projects.project
+        primary_key: [project_id]
+        unique_keys:
+          - [project_id]
+          - [project_code]
+        description: >
+          A discrete, time-bounded body of work with a defined objective,
+          budget, and delivery date. May be internal (infrastructure, R&D,
+          process improvement) or client-facing (billable professional services).
+        ai_context:
+          synonyms:
+            - "project"
+            - "engagement"
+            - "program"
+            - "initiative"
+            - "workstream"
+        fields:
+          - name: project_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: project_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: project_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: project_code
+            description: Unique project identifier (e.g., 'PRJ-2024-00142').
+            dimension:
+              is_time: false
+
+          - name: project_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: project_name
+            description: Descriptive name of the project.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "project name"
+                - "engagement name"
+
+          - name: project_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: project_type
+            description: >
+              Classification of the project's nature.
+              Values: internal, client-billable, capex, r-and-d,
+              infrastructure, process-improvement.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "project category"
+                - "type"
+
+          - name: customer_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: customer_id
+            description: >
+              Foreign key to enterprise_sales.customer (cross-file). The client
+              for whom this project is being delivered. NULL for internal projects.
+            dimension:
+              is_time: false
+
+          - name: legal_entity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: legal_entity_id
+            description: Foreign key to enterprise_core.legal_entity. The entity delivering this project.
+            dimension:
+              is_time: false
+
+          - name: project_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: project_status
+            description: >
+              Current status of the project.
+              Values: planning, active, on-hold, completed, cancelled.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "status"
+                - "project health"
+
+          - name: start_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: start_date
+            description: Planned or actual project start date (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "project start"
+                - "kick-off date"
+
+          - name: end_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: end_date
+            description: Planned or actual project end (completion) date (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "project end"
+                - "completion date"
+                - "deadline"
+
+          - name: budget
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: budget
+            description: Approved budget for the project in currency_code.
+            ai_context:
+              synonyms:
+                - "project budget"
+                - "approved budget"
+
+          - name: actual_cost
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: actual_cost
+            description: Actual cost incurred to date in currency_code.
+            ai_context:
+              synonyms:
+                - "spend"
+                - "actual spend"
+                - "cost to date"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for budget and actual_cost.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # PROJECT_TASK — a unit of work within a project (WBS node)
+      # -----------------------------------------------------------------------
+      - name: project_task
+        source: enterprise.projects.project_task
+        primary_key: [task_id]
+        unique_keys:
+          - [task_id]
+        description: >
+          A single unit of work within a project. Tasks form a hierarchical
+          work breakdown structure (WBS) via parent_task_id. Leaf tasks are
+          assigned to individual employees and have estimated and actual hours.
+        ai_context:
+          synonyms:
+            - "task"
+            - "work item"
+            - "activity"
+            - "WBS element"
+            - "milestone"
+        fields:
+          - name: task_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: task_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: project_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: project_id
+            description: Foreign key to project.
+            dimension:
+              is_time: false
+
+          - name: parent_task_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: parent_task_id
+            description: Self-referencing FK for WBS hierarchy. NULL for top-level tasks.
+            dimension:
+              is_time: false
+
+          - name: task_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: task_name
+            description: Short name for the task.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "activity name"
+                - "work item name"
+
+          - name: task_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: task_type
+            description: >
+              Nature of the task.
+              Values: milestone, deliverable, activity, phase, gate.
+            dimension:
+              is_time: false
+
+          - name: assigned_to_employee_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: assigned_to_employee_id
+            description: Foreign key to enterprise_hr.employee (cross-file). The employee responsible for this task.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "assignee"
+                - "task owner"
+                - "responsible"
+
+          - name: task_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: task_status
+            description: >
+              Current status.
+              Values: not-started, in-progress, completed, blocked, cancelled.
+            dimension:
+              is_time: false
+
+          - name: planned_start
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: planned_start
+            description: Planned start date for this task (ISO 8601).
+            dimension:
+              is_time: true
+
+          - name: planned_end
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: planned_end
+            description: Planned completion date for this task (ISO 8601).
+            dimension:
+              is_time: true
+
+          - name: actual_start
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: actual_start
+            description: Actual start date (ISO 8601). NULL if not yet started.
+            dimension:
+              is_time: true
+
+          - name: actual_end
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: actual_end
+            description: Actual completion date (ISO 8601). NULL if not yet completed.
+            dimension:
+              is_time: true
+
+          - name: estimated_hours
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: estimated_hours
+            description: Planned effort in hours for this task.
+            ai_context:
+              synonyms:
+                - "planned hours"
+                - "estimated effort"
+
+          - name: actual_hours
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: actual_hours
+            description: Actual effort logged against this task in hours.
+            ai_context:
+              synonyms:
+                - "hours logged"
+                - "time spent"
+                - "actual effort"
+
+      # -----------------------------------------------------------------------
+      # PROJECT_RESOURCE — allocation of an employee to a project
+      # -----------------------------------------------------------------------
+      - name: project_resource
+        source: enterprise.projects.project_resource
+        primary_key: [resource_id]
+        unique_keys:
+          - [resource_id]
+          - [project_id, employee_id, allocated_from]
+        description: >
+          Records the planned allocation of an employee to a project for a
+          defined period. Used for resource planning, capacity management,
+          and utilization reporting.
+        ai_context:
+          synonyms:
+            - "resource allocation"
+            - "staffing"
+            - "team member"
+            - "resource plan"
+        fields:
+          - name: resource_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: resource_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: project_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: project_id
+            description: Foreign key to project.
+            dimension:
+              is_time: false
+
+          - name: employee_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: employee_id
+            description: Foreign key to enterprise_hr.employee (cross-file).
+            dimension:
+              is_time: false
+
+          - name: resource_role
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: resource_role
+            description: >
+              The role this employee plays on the project.
+              Values: project-manager, lead, analyst, developer, consultant,
+              reviewer, sponsor.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "project role"
+                - "role on project"
+
+          - name: allocated_hours
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: allocated_hours
+            description: Total hours allocated to this employee for this project in this period.
+            ai_context:
+              synonyms:
+                - "planned hours"
+                - "allocated capacity"
+
+          - name: allocated_from
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: allocated_from
+            description: Start date of the allocation period (ISO 8601).
+            dimension:
+              is_time: true
+
+          - name: allocated_to
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: allocated_to
+            description: End date of the allocation period (ISO 8601).
+            dimension:
+              is_time: true
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: project_task_to_project
+        from: project_task
+        to: project
+        from_columns: [project_id]
+        to_columns: [project_id]
+        ai_context:
+          synonyms:
+            - "task belongs to project"
+
+      - name: project_task_to_parent_task
+        from: project_task
+        to: project_task
+        from_columns: [parent_task_id]
+        to_columns: [task_id]
+        ai_context:
+          synonyms:
+            - "parent task"
+            - "WBS hierarchy"
+
+      - name: project_resource_to_project
+        from: project_resource
+        to: project
+        from_columns: [project_id]
+        to_columns: [project_id]
+        ai_context:
+          synonyms:
+            - "resource on project"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: budget_utilization_pct
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(project.actual_cost) * 100.0
+                / NULLIF(SUM(project.budget), 0)
+        description: Percentage of approved project budget consumed to date.
+        ai_context:
+          synonyms:
+            - "budget burn"
+            - "budget consumed"
+            - "spend rate"
+
+      - name: schedule_adherence_pct
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(CASE WHEN project_task.actual_end <= project_task.planned_end
+                              AND project_task.task_status = 'completed'
+                           THEN 1 END)
+                * 100.0
+                / NULLIF(COUNT(CASE WHEN project_task.task_status = 'completed' THEN 1 END), 0)
+        description: Percentage of completed tasks delivered on or before their planned end date.
+        ai_context:
+          synonyms:
+            - "on-time delivery"
+            - "schedule performance"
+            - "OTD"
+
+      - name: resource_utilization_pct
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(project_task.actual_hours) * 100.0
+                / NULLIF(SUM(project_resource.allocated_hours), 0)
+        description: Percentage of allocated resource hours that were actually spent on project tasks.
+        ai_context:
+          synonyms:
+            - "utilization"
+            - "resource utilization"
+            - "billable utilization"
+
+      - name: total_project_hours
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(project_task.actual_hours)
+        description: Total actual hours logged across all projects and tasks in scope.
+        ai_context:
+          synonyms:
+            - "total hours"
+            - "hours spent"
+            - "effort"

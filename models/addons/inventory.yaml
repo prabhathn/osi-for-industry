@@ -1,0 +1,418 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Add-on: Inventory
+# Module: Stock management — on-hand balances and movement transactions
+#
+# This module is NOT universal — include it for enterprises that track
+# physical stock levels (retailers, manufacturers, distributors, 3PLs).
+#
+# Depends on:
+#   - enterprise_core.yaml    (product.product_id -> core.product)
+#   - addon_sites.yaml        (inventory_location.site_id -> sites.site)
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_addon_inventory
+    description: >
+      Add-on module for enterprises that track physical stock. Covers inventory
+      locations (bins, shelves, zones) within sites, current on-hand balance
+      snapshots per product and location, and the movement transactions that
+      change those balances (receipts, issues, transfers, adjustments, returns).
+    ai_context:
+      instructions: >
+        Use this model for stock level analysis and inventory movement reporting.
+
+        Data flow:
+          site (addon_sites) -> inventory_location -> inventory_balance
+          inventory_location -> inventory_transaction -> product (enterprise_core)
+
+        inventory_balance is a snapshot table: each row represents the quantity
+        at a location as of a specific date. Use the latest as_of_date per
+        location for current on-hand.
+
+        inventory_transaction is the movement ledger: each row records a single
+        stock movement event (receipt, issue, transfer, etc.).
+
+        To get product details, join to enterprise_core.product.
+        To get site details, join inventory_location.site_id to
+        enterprise_addon_sites.site.site_id.
+
+        Load enterprise_core.yaml and addon_sites.yaml with this file for full
+        cross-file resolution.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # INVENTORY_LOCATION — a named storage location within a site
+      # -----------------------------------------------------------------------
+      - name: inventory_location
+        source: enterprise.inventory.inventory_location
+        primary_key: [location_id]
+        unique_keys:
+          - [location_id]
+          - [site_id, location_code]
+        description: >
+          A specific named storage area within a site (bin, shelf, zone, bay,
+          bulk floor area, rack). The granularity at which stock is tracked.
+          A site contains one or more inventory locations.
+        ai_context:
+          synonyms:
+            - "bin"
+            - "shelf"
+            - "storage location"
+            - "rack"
+            - "zone"
+        fields:
+          - name: location_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: location_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: site_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: site_id
+            description: Foreign key to enterprise_addon_sites.site. The site this location belongs to.
+            dimension:
+              is_time: false
+
+          - name: location_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: location_code
+            description: Unique code within the site (e.g., 'A-01-03', 'BULK-EAST', 'RACK-12-B').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "bin code"
+                - "bin location"
+
+          - name: location_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: location_type
+            description: >
+              Functional type of the location.
+              Values: bin, shelf, zone, rack, bulk, staging, quarantine, transit.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "storage type"
+                - "location category"
+
+      # -----------------------------------------------------------------------
+      # INVENTORY_BALANCE — snapshot of quantity at a location as of a date
+      # -----------------------------------------------------------------------
+      - name: inventory_balance
+        source: enterprise.inventory.inventory_balance
+        primary_key: [balance_id]
+        unique_keys:
+          - [balance_id]
+          - [product_id, location_id, as_of_date]
+        description: >
+          A point-in-time snapshot of the quantity of a product at an inventory
+          location. Use the row with the maximum as_of_date per
+          (product_id, location_id) to get the current on-hand balance.
+          quantity_available = quantity_on_hand - quantity_reserved.
+        ai_context:
+          synonyms:
+            - "on-hand"
+            - "stock level"
+            - "inventory on hand"
+            - "stock balance"
+        fields:
+          - name: balance_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: balance_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: product_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_id
+            description: Foreign key to enterprise_core.product.
+            dimension:
+              is_time: false
+
+          - name: location_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: location_id
+            description: Foreign key to inventory_location.
+            dimension:
+              is_time: false
+
+          - name: quantity_on_hand
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: quantity_on_hand
+            description: Total physical quantity present at this location as of as_of_date.
+            ai_context:
+              synonyms:
+                - "on hand"
+                - "QOH"
+                - "stock quantity"
+
+          - name: quantity_reserved
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: quantity_reserved
+            description: Quantity committed to open orders but not yet shipped.
+            ai_context:
+              synonyms:
+                - "reserved"
+                - "committed"
+                - "allocated"
+
+          - name: quantity_available
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: quantity_available
+            description: >
+              Quantity available for new orders (quantity_on_hand - quantity_reserved).
+              May be stored or computed.
+            ai_context:
+              synonyms:
+                - "available"
+                - "free stock"
+                - "available to promise"
+                - "ATP"
+
+          - name: as_of_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: as_of_date
+            description: The date (ISO 8601) this balance snapshot reflects.
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "snapshot date"
+                - "balance date"
+
+      # -----------------------------------------------------------------------
+      # INVENTORY_TRANSACTION — a single stock movement event
+      # -----------------------------------------------------------------------
+      - name: inventory_transaction
+        source: enterprise.inventory.inventory_transaction
+        primary_key: [txn_id]
+        unique_keys:
+          - [txn_id]
+        description: >
+          Records a single movement of stock at an inventory location. Each
+          transaction changes the on-hand balance of a product at a location.
+          Positive quantity = stock increase (receipt, return);
+          negative quantity = stock decrease (issue, shipment).
+        ai_context:
+          synonyms:
+            - "stock movement"
+            - "inventory movement"
+            - "stock transaction"
+            - "goods movement"
+        fields:
+          - name: txn_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: txn_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: product_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_id
+            description: Foreign key to enterprise_core.product.
+            dimension:
+              is_time: false
+
+          - name: location_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: location_id
+            description: Foreign key to inventory_location.
+            dimension:
+              is_time: false
+
+          - name: txn_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: txn_type
+            description: >
+              Type of stock movement event.
+              Values: receipt, issue, transfer-in, transfer-out, adjustment,
+              return, count (physical inventory count correction).
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "movement type"
+                - "transaction type"
+
+          - name: quantity
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: quantity
+            description: >
+              Quantity moved. Positive for inbound (receipt, return, transfer-in);
+              negative for outbound (issue, transfer-out).
+            ai_context:
+              synonyms:
+                - "movement quantity"
+                - "qty"
+
+          - name: unit_cost
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: unit_cost
+            description: Cost per unit at time of the movement, in the legal entity's functional currency.
+            ai_context:
+              synonyms:
+                - "cost"
+                - "unit value"
+
+          - name: txn_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: txn_date
+            description: Date and time of the stock movement (ISO 8601 date-time).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "movement date"
+                - "transaction date"
+
+          - name: reference_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: reference_type
+            description: >
+              Type of the source document that triggered this movement.
+              Values: purchase-order, sales-order, work-order, transfer-order,
+              adjustment, manual.
+            dimension:
+              is_time: false
+
+          - name: reference_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: reference_id
+            description: >
+              Primary key of the source document (e.g., po_id, order_id, wo_id).
+              Resolve against the appropriate domain model using reference_type.
+            dimension:
+              is_time: false
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: inventory_balance_to_location
+        from: inventory_balance
+        to: inventory_location
+        from_columns: [location_id]
+        to_columns: [location_id]
+        ai_context:
+          synonyms:
+            - "balance at location"
+
+      - name: inventory_transaction_to_location
+        from: inventory_transaction
+        to: inventory_location
+        from_columns: [location_id]
+        to_columns: [location_id]
+        ai_context:
+          synonyms:
+            - "movement at location"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: total_on_hand_quantity
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(inventory_balance.quantity_on_hand)
+        description: Total on-hand quantity across all products and locations in scope.
+        ai_context:
+          synonyms:
+            - "total stock"
+            - "total on hand"
+            - "total inventory quantity"
+
+      - name: total_inventory_value
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(inventory_balance.quantity_on_hand * inventory_transaction.unit_cost)
+        description: >
+          Total inventory value (on-hand quantity multiplied by most recent unit
+          cost). Requires joining to the latest unit_cost from inventory_transaction.
+        ai_context:
+          synonyms:
+            - "inventory value"
+            - "stock value"
+            - "inventory worth"
+
+      - name: stockout_location_count
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(DISTINCT CASE WHEN inventory_balance.quantity_available <= 0
+                                    THEN inventory_balance.location_id END)
+        description: Number of location-product combinations currently with zero or negative available quantity.
+        ai_context:
+          synonyms:
+            - "stockouts"
+            - "out of stock"
+            - "zero stock locations"
+
+      - name: inventory_turns
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(CASE WHEN inventory_transaction.txn_type = 'issue'
+                         THEN ABS(inventory_transaction.quantity) * inventory_transaction.unit_cost
+                         ELSE 0 END)
+                / NULLIF(SUM(inventory_balance.quantity_on_hand * inventory_transaction.unit_cost), 0)
+        description: >
+          Inventory turnover ratio: cost of goods issued divided by average
+          on-hand inventory value. A higher number indicates faster-moving stock.
+        ai_context:
+          synonyms:
+            - "inventory turnover"
+            - "stock turns"
+            - "turn rate"

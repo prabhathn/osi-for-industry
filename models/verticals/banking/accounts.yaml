@@ -1,0 +1,482 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Vertical: Banking — Accounts
+# Module: Financial accounts, balances, and account transactions.
+#
+# This module is intentionally minimal and avoids deep financial jargon.
+# It covers the core account management needs of a retail or commercial bank.
+#
+# Depends on: enterprise_core.yaml
+#   - account.party_id            -> core.party.party_id
+#   - account.legal_entity_id     -> core.legal_entity.legal_entity_id
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_vertical_banking_accounts
+    description: >
+      Vertical module for financial institutions managing customer accounts.
+      Covers the account type catalogue, individual customer accounts, daily
+      balance snapshots, and transaction history. Intentionally generic —
+      avoids deep regulatory jargon while covering checking, savings, loan,
+      card, and term deposit product families.
+    ai_context:
+      instructions: >
+        Use this model for account-level analytics: balances by account type,
+        transaction volumes, and account status distributions.
+
+        Data hierarchy:
+          account_type -> account (one type, many accounts)
+          account -> account_balance (daily snapshots)
+          account -> account_transaction (debits and credits)
+
+        account.party_id references enterprise_core.party (cross-file).
+        account.legal_entity_id references enterprise_core.legal_entity (cross-file).
+
+        account_type.type_code values: checking, savings, loan, card, term-deposit.
+        account.status values: active, dormant, closed, frozen.
+        account_transaction.txn_type values: credit, debit.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # ACCOUNT_TYPE — product family definition
+      # -----------------------------------------------------------------------
+      - name: account_type
+        source: enterprise.banking.account_type
+        primary_key: [type_id]
+        unique_keys:
+          - [type_id]
+          - [type_code]
+        description: >
+          Defines the category and product family of an account (e.g., checking,
+          savings, loan, card, term-deposit). Used for portfolio analysis and
+          regulatory reporting grouping.
+        ai_context:
+          synonyms:
+            - "product type"
+            - "account category"
+            - "product family"
+        fields:
+          - name: type_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: type_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: type_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: type_code
+            description: >
+              Standardised product category code.
+              Values: checking, savings, loan, card, term-deposit.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "product code"
+                - "account code"
+
+          - name: type_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: type_name
+            description: Full display name for the account type (e.g., 'Personal Checking', 'Fixed-Rate Mortgage').
+            dimension:
+              is_time: false
+
+          - name: product_family
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_family
+            description: >
+              Broad product grouping for regulatory or management reporting.
+              Values: deposit, credit, investment.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # ACCOUNT — an individual customer account
+      # -----------------------------------------------------------------------
+      - name: account
+        source: enterprise.banking.account
+        primary_key: [account_id]
+        unique_keys:
+          - [account_id]
+          - [account_number]
+        description: >
+          A single financial account held by a customer (party) at a legal entity.
+          Tracks the account type, currency, open and close dates, and current
+          lifecycle status.
+        ai_context:
+          synonyms:
+            - "bank account"
+            - "customer account"
+            - "financial account"
+        fields:
+          - name: account_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: account_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: account_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: account_number
+            description: Unique customer-visible account number (may be masked in analytics contexts).
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "IBAN"
+                - "account reference"
+
+          - name: party_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_id
+            description: Foreign key to enterprise_core.party (cross-file). The account holder.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "customer"
+                - "account holder"
+
+          - name: account_type_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: account_type_id
+            description: Foreign key to account_type. The product type of this account.
+            dimension:
+              is_time: false
+
+          - name: legal_entity_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: legal_entity_id
+            description: Foreign key to enterprise_core.legal_entity (cross-file). The bank entity that holds the account.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "branch entity"
+                - "issuing entity"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for the account.
+            dimension:
+              is_time: false
+
+          - name: open_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: open_date
+            description: Date the account was opened (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "account opened"
+                - "origination date"
+
+          - name: close_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: close_date
+            description: Date the account was closed (ISO 8601). NULL for open accounts.
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "closed date"
+                - "termination date"
+
+          - name: status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: status
+            description: >
+              Current account lifecycle state.
+              Values: active, dormant, closed, frozen.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # ACCOUNT_BALANCE — daily balance snapshot
+      # -----------------------------------------------------------------------
+      - name: account_balance
+        source: enterprise.banking.account_balance
+        primary_key: [balance_id]
+        unique_keys:
+          - [balance_id]
+          - [account_id, balance_date]
+        description: >
+          A daily end-of-day snapshot of an account's balance. Used for
+          average balance calculations, interest accruals, and regulatory
+          reporting without needing to replay every transaction.
+        ai_context:
+          synonyms:
+            - "balance snapshot"
+            - "daily balance"
+            - "end-of-day balance"
+        fields:
+          - name: balance_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: balance_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: account_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: account_id
+            description: Foreign key to account. The account this balance snapshot is for.
+            dimension:
+              is_time: false
+
+          - name: balance_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: balance_date
+            description: The business date of this snapshot (ISO 8601).
+            dimension:
+              is_time: true
+
+          - name: current_balance
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: current_balance
+            description: Ledger balance at end of day (includes all posted transactions).
+            ai_context:
+              synonyms:
+                - "ledger balance"
+                - "book balance"
+
+          - name: available_balance
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: available_balance
+            description: Balance available for use after holds and pending transactions. May differ from current_balance.
+            ai_context:
+              synonyms:
+                - "usable balance"
+                - "cleared balance"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code of the balance values.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # ACCOUNT_TRANSACTION — a debit or credit on an account
+      # -----------------------------------------------------------------------
+      - name: account_transaction
+        source: enterprise.banking.account_transaction
+        primary_key: [txn_id]
+        unique_keys:
+          - [txn_id]
+          - [reference_number]
+        description: >
+          A single posted debit or credit on a customer account. Covers all
+          movement types: deposits, withdrawals, transfers, fee charges, and
+          interest credits.
+        ai_context:
+          synonyms:
+            - "transaction"
+            - "posting"
+            - "debit"
+            - "credit"
+            - "account movement"
+        fields:
+          - name: txn_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: txn_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: account_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: account_id
+            description: Foreign key to account. The account affected by this transaction.
+            dimension:
+              is_time: false
+
+          - name: txn_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: txn_date
+            description: Date the transaction was posted (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "posting date"
+                - "value date"
+
+          - name: txn_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: txn_type
+            description: >
+              Direction of the money movement.
+              Values: credit, debit.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "movement type"
+                - "transaction direction"
+
+          - name: amount
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: amount
+            description: Absolute (unsigned) transaction amount in currency_code.
+            ai_context:
+              synonyms:
+                - "value"
+                - "transaction amount"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for the transaction amount.
+            dimension:
+              is_time: false
+
+          - name: reference_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: reference_number
+            description: External reference or trace number for reconciliation (e.g., payment instruction ID, cheque number).
+            dimension:
+              is_time: false
+
+          - name: description
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: description
+            description: Human-readable description of the transaction (e.g., 'Direct Deposit - Payroll', 'ATM Withdrawal').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "memo"
+                - "narrative"
+                - "transaction description"
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: account_to_type
+        from: account
+        to: account_type
+        from_columns: [account_type_id]
+        to_columns: [type_id]
+        ai_context:
+          synonyms:
+            - "account is of type"
+
+      - name: balance_to_account
+        from: account_balance
+        to: account
+        from_columns: [account_id]
+        to_columns: [account_id]
+        ai_context:
+          synonyms:
+            - "balance snapshot for account"
+
+      - name: transaction_to_account
+        from: account_transaction
+        to: account
+        from_columns: [account_id]
+        to_columns: [account_id]
+        ai_context:
+          synonyms:
+            - "transaction posted to account"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: total_account_balance
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(account_balance.current_balance)
+        description: Sum of all current balances across selected accounts and date filter.
+        ai_context:
+          synonyms:
+            - "total deposits"
+            - "total balance"
+            - "assets under management"
+
+      - name: account_count_by_type
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(DISTINCT account.account_id)
+        description: Number of accounts. Typically used with account_type.type_code as a group-by dimension.
+        ai_context:
+          synonyms:
+            - "number of accounts"
+            - "account count"
+
+      - name: transaction_volume
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(account_transaction.txn_id)
+        description: Total count of posted transactions in the selected period.
+        ai_context:
+          synonyms:
+            - "transaction count"
+            - "posting volume"
+            - "number of transactions"

@@ -1,0 +1,493 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Enterprise Marketing Semantic Model
+# Domain layer: Marketing
+#
+# Depends on: enterprise_core.yaml
+#   - campaign_response.party_id  -> core.party.party_id
+#   - party_segment.party_id      -> core.party.party_id
+#
+# Cross-references to enterprise_sales.yaml:
+#   - lead.source_campaign_id     -> campaign.campaign_id (cross-file, in ai_context)
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_marketing
+    description: >
+      Marketing domain model covering campaigns across all channels, campaign
+      response tracking, market segment definitions, and party-to-segment
+      assignments. Connects to Sales via lead.source_campaign_id and to core
+      Party for audience resolution.
+    ai_context:
+      instructions: >
+        This model covers marketing analytics: campaign performance, audience
+        segmentation, and response tracking.
+
+        Key flows:
+          campaign -> campaign_response -> party (who responded)
+          party -> party_segment -> market_segment (audience membership)
+
+        To measure lead generation from campaigns, join campaign.campaign_id
+        to enterprise_sales.lead.source_campaign_id (cross-file).
+
+        Party names and contact details resolve by joining
+        campaign_response.party_id to enterprise_core.party.party_id.
+
+        Load enterprise_core.yaml and enterprise_sales.yaml alongside this
+        file for full cross-domain campaign attribution analysis.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # CAMPAIGN — a marketing initiative across one or more channels
+      # -----------------------------------------------------------------------
+      - name: campaign
+        source: enterprise.marketing.campaign
+        primary_key: [campaign_id]
+        unique_keys:
+          - [campaign_id]
+          - [campaign_code]
+        description: >
+          A planned marketing initiative with a defined budget, channel,
+          audience, and date range. A campaign generates responses that may
+          convert into sales leads and ultimately orders.
+        ai_context:
+          synonyms:
+            - "marketing campaign"
+            - "promotion"
+            - "marketing program"
+            - "initiative"
+        fields:
+          - name: campaign_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: campaign_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: campaign_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: campaign_code
+            description: Unique short code (e.g., 'CAM-2024-Q3-EMAIL-01').
+            dimension:
+              is_time: false
+
+          - name: campaign_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: campaign_name
+            description: Human-readable campaign name.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "campaign"
+                - "promotion name"
+
+          - name: channel
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: channel
+            description: >
+              Primary delivery channel for the campaign.
+              Values: email, social, event, paid-search, organic,
+              direct-mail, webinar, display, sms, referral.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "marketing channel"
+                - "medium"
+                - "channel type"
+
+          - name: start_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: start_date
+            description: Date the campaign launches (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "launch date"
+                - "campaign start"
+
+          - name: end_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: end_date
+            description: Date the campaign ends. NULL for evergreen campaigns.
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "campaign end"
+                - "expiry date"
+
+          - name: budget
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: budget
+            description: Planned spending budget for this campaign in currency_code.
+            ai_context:
+              synonyms:
+                - "campaign budget"
+                - "spend budget"
+
+          - name: actual_spend
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: actual_spend
+            description: Actual amount spent on this campaign to date in currency_code.
+            ai_context:
+              synonyms:
+                - "spend"
+                - "actual cost"
+                - "marketing spend"
+
+          - name: currency_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: currency_code
+            description: ISO 4217 currency code for budget and actual_spend.
+            dimension:
+              is_time: false
+
+          - name: campaign_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: campaign_status
+            description: >
+              Lifecycle status of the campaign.
+              Values: planned, active, paused, completed, cancelled.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "status"
+
+      # -----------------------------------------------------------------------
+      # CAMPAIGN_RESPONSE — a single party interaction with a campaign
+      # -----------------------------------------------------------------------
+      - name: campaign_response
+        source: enterprise.marketing.campaign_response
+        primary_key: [response_id]
+        unique_keys:
+          - [response_id]
+        description: >
+          Records a single interaction between a party and a campaign (e.g.,
+          opening an email, clicking a link, attending an event, making a
+          purchase). Multiple responses per party per campaign are allowed.
+        ai_context:
+          synonyms:
+            - "response"
+            - "interaction"
+            - "engagement"
+            - "event response"
+        fields:
+          - name: response_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: response_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: campaign_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: campaign_id
+            description: Foreign key to campaign.
+            dimension:
+              is_time: false
+
+          - name: party_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_id
+            description: >
+              Foreign key to enterprise_core.party. The person or organization
+              that responded.
+            dimension:
+              is_time: false
+
+          - name: response_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: response_date
+            description: Timestamp of the response (ISO 8601 date-time).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "engagement date"
+                - "interaction date"
+
+          - name: response_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: response_type
+            description: >
+              Type of interaction recorded.
+              Values: open, click, attend, convert, opt-out, form-submit,
+              download, view.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "interaction type"
+                - "engagement type"
+                - "action"
+
+      # -----------------------------------------------------------------------
+      # MARKET_SEGMENT — definition of an audience segment
+      # -----------------------------------------------------------------------
+      - name: market_segment
+        source: enterprise.marketing.market_segment
+        primary_key: [segment_id]
+        unique_keys:
+          - [segment_id]
+          - [segment_code]
+        description: >
+          A named grouping of parties that share common characteristics,
+          used for targeting campaigns and personalizing outreach. Segments
+          can be demographic, firmographic, behavioral, or custom.
+        ai_context:
+          synonyms:
+            - "segment"
+            - "audience"
+            - "audience segment"
+            - "target segment"
+        fields:
+          - name: segment_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: segment_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: segment_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: segment_code
+            description: Unique short code for the segment (e.g., 'SEG-SMB-US').
+            dimension:
+              is_time: false
+
+          - name: segment_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: segment_name
+            description: Display name of the segment.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "segment name"
+                - "audience name"
+
+          - name: segment_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: segment_type
+            description: >
+              Classification of how the segment is defined.
+              Values: demographic, firmographic, behavioral, geographic, custom.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "segment category"
+                - "type"
+
+          - name: segment_description
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: segment_description
+            description: Free-text description of the segment criteria and purpose.
+            dimension:
+              is_time: false
+
+      # -----------------------------------------------------------------------
+      # PARTY_SEGMENT — assigns a party to one or more market segments
+      # -----------------------------------------------------------------------
+      - name: party_segment
+        source: enterprise.marketing.party_segment
+        primary_key: [ps_id]
+        unique_keys:
+          - [ps_id]
+          - [party_id, segment_id]
+        description: >
+          Junction table that assigns a party (person or organization) to a
+          market segment. A party can belong to multiple segments.
+        ai_context:
+          synonyms:
+            - "segment membership"
+            - "audience membership"
+        fields:
+          - name: ps_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: ps_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: party_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_id
+            description: Foreign key to enterprise_core.party.
+            dimension:
+              is_time: false
+
+          - name: segment_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: segment_id
+            description: Foreign key to market_segment.
+            dimension:
+              is_time: false
+
+          - name: assigned_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: assigned_date
+            description: Date the party was assigned to this segment (ISO 8601).
+            dimension:
+              is_time: true
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: campaign_response_to_campaign
+        from: campaign_response
+        to: campaign
+        from_columns: [campaign_id]
+        to_columns: [campaign_id]
+        ai_context:
+          synonyms:
+            - "response to campaign"
+
+      - name: party_segment_to_market_segment
+        from: party_segment
+        to: market_segment
+        from_columns: [segment_id]
+        to_columns: [segment_id]
+        ai_context:
+          synonyms:
+            - "segment membership"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: total_campaign_spend
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(campaign.actual_spend)
+        description: Total actual marketing spend across all campaigns in scope.
+        ai_context:
+          synonyms:
+            - "marketing spend"
+            - "advertising spend"
+            - "campaign cost"
+
+      - name: total_responses
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(campaign_response.response_id)
+        description: Total number of campaign response events across all campaigns.
+        ai_context:
+          synonyms:
+            - "responses"
+            - "engagements"
+            - "interactions"
+
+      - name: unique_respondents
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(DISTINCT campaign_response.party_id)
+        description: Number of distinct parties that have responded to campaigns.
+        ai_context:
+          synonyms:
+            - "unique respondents"
+            - "reached audience"
+            - "engaged parties"
+
+      - name: response_rate
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(DISTINCT campaign_response.party_id) * 100.0
+                / NULLIF(COUNT(DISTINCT party_segment.party_id), 0)
+        description: >
+          Percentage of targeted segment members who responded to the campaign.
+          Requires joining campaign to the segment it targeted.
+        ai_context:
+          synonyms:
+            - "response rate"
+            - "engagement rate"
+            - "CTR"
+            - "open rate"
+
+      - name: cost_per_response
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                SUM(campaign.actual_spend)
+                / NULLIF(COUNT(DISTINCT campaign_response.party_id), 0)
+        description: Average marketing cost per unique respondent.
+        ai_context:
+          synonyms:
+            - "CPR"
+            - "cost per engagement"
+            - "cost per lead"
+
+      - name: conversion_rate
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(CASE WHEN campaign_response.response_type = 'convert' THEN 1 END)
+                * 100.0
+                / NULLIF(COUNT(DISTINCT campaign_response.party_id), 0)
+        description: Percentage of campaign respondents who completed a conversion action.
+        ai_context:
+          synonyms:
+            - "conversion rate"
+            - "CVR"

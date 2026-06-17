@@ -1,0 +1,281 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Add-on: Returns & Reversals
+# Module: Return requests and disposition of returned goods.
+#
+# This module is NOT universal — include it for enterprises handling
+# customer returns (retail, e-commerce) or supplier/customer RMAs
+# (manufacturing, distribution).
+#
+# Depends on: enterprise_core.yaml
+#   - return_request.party_id     -> core.party.party_id
+#   - return_request.order_id     -> enterprise_sales.sales_order.order_id
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_addon_returns
+    description: >
+      Add-on module for managing customer returns and reverse logistics.
+      Covers the return request lifecycle and the individual line items being
+      returned, including condition assessment and final disposition.
+      Applies to retail returns (consumer) and manufacturing RMA processes.
+    ai_context:
+      instructions: >
+        Use this model for return analytics: return rates, reasons, and
+        disposition outcomes (restock, scrap, repair).
+
+        Data hierarchy:
+          return_request -> return_line (one return, many items)
+
+        return_request.party_id references enterprise_core.party (cross-file).
+        return_request.original_order_id references enterprise_sales.sales_order
+        (cross-file). Load those models to resolve customer and original order details.
+
+        return_request.status values: requested, approved, received, closed.
+        return_line.condition values: resaleable, damaged, defective.
+        return_line.disposition values: restock, scrap, repair.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # RETURN_REQUEST — the header for a return or reversal event
+      # -----------------------------------------------------------------------
+      - name: return_request
+        source: enterprise.returns.return_request
+        primary_key: [return_id]
+        unique_keys:
+          - [return_id]
+          - [return_number]
+        description: >
+          The header record for a customer return or reverse logistics request.
+          Links back to the original sales order and tracks the return through
+          approval, receipt, and closure.
+        ai_context:
+          synonyms:
+            - "return"
+            - "RMA"
+            - "reversal"
+            - "return authorisation"
+            - "return merchandise authorisation"
+        fields:
+          - name: return_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: return_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: return_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: return_number
+            description: Human-readable return reference (e.g., 'RMA-2024-00123').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "RMA number"
+                - "return reference"
+
+          - name: original_order_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: original_order_id
+            description: Foreign key to enterprise_sales.sales_order (cross-file). The order being reversed.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "source order"
+                - "original order"
+
+          - name: party_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_id
+            description: Foreign key to enterprise_core.party (cross-file). The customer initiating the return.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "customer"
+                - "returning customer"
+
+          - name: request_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: request_date
+            description: Date the return was requested (ISO 8601).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "return date"
+                - "submission date"
+
+          - name: status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: status
+            description: >
+              Current lifecycle state.
+              Values: requested, approved, received, closed.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "return status"
+                - "lifecycle state"
+
+          - name: reason_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: reason_code
+            description: Standardised reason for the return (e.g., 'defective', 'wrong-item', 'no-longer-needed', 'damaged-in-transit').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "return reason"
+                - "reason"
+                - "return cause"
+
+      # -----------------------------------------------------------------------
+      # RETURN_LINE — a single item within a return request
+      # -----------------------------------------------------------------------
+      - name: return_line
+        source: enterprise.returns.return_line
+        primary_key: [line_id]
+        unique_keys:
+          - [line_id]
+        description: >
+          One item (product + quantity) included in a return request. Records
+          the physical condition of the returned goods and the final disposition
+          decision (restock, scrap, or send for repair).
+        ai_context:
+          synonyms:
+            - "return line"
+            - "returned item"
+            - "RMA line"
+        fields:
+          - name: line_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: return_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: return_id
+            description: Foreign key to return_request. The return this line belongs to.
+            dimension:
+              is_time: false
+
+          - name: product_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_id
+            description: Foreign key to enterprise_procurement.product (cross-file). The item being returned.
+            dimension:
+              is_time: false
+
+          - name: quantity
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: quantity
+            description: Number of units being returned on this line.
+            ai_context:
+              synonyms:
+                - "qty"
+                - "returned quantity"
+
+          - name: condition
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: condition
+            description: >
+              Physical state of the returned goods upon receipt.
+              Values: resaleable, damaged, defective.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "item condition"
+                - "goods condition"
+
+          - name: disposition
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: disposition
+            description: >
+              What happens to the item after return processing.
+              Values: restock, scrap, repair.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "outcome"
+                - "return action"
+                - "handling"
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: return_line_to_request
+        from: return_line
+        to: return_request
+        from_columns: [return_id]
+        to_columns: [return_id]
+        ai_context:
+          synonyms:
+            - "line belongs to return"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: return_rate
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(DISTINCT return_request.return_id)
+        description: Total number of return requests. Combine with sales order counts from enterprise_sales to compute a return rate percentage.
+        ai_context:
+          synonyms:
+            - "total returns"
+            - "return count"
+            - "reversal count"
+
+      - name: restock_rate
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(CASE WHEN return_line.disposition = 'restock' THEN 1 END)
+                * 100.0
+                / NULLIF(COUNT(return_line.line_id), 0)
+        description: Percentage of returned lines dispositioned as restock (i.e., saleable again). Higher is better.
+        ai_context:
+          synonyms:
+            - "recovery rate"
+            - "resaleable rate"

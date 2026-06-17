@@ -1,0 +1,508 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json
+
+# Add-on: Support & Ticketing
+# Module: Customer and internal support case management with SLA tracking
+#
+# This module is NOT universal — include it for enterprises that operate a
+# support function: customer service, IT help desk, field service, internal
+# shared services, etc.
+#
+# Depends on: enterprise_core.yaml
+#   - support_case.party_id     -> core.party.party_id
+#   - support_case.product_id   -> core.product.product_id
+#
+# Cross-references (cross-file, encoded in ai_context):
+#   - support_case.assigned_to_employee_id -> enterprise_hr.employee.employee_id
+#   - case_interaction.employee_id         -> enterprise_hr.employee.employee_id
+
+version: "0.1.1"
+
+semantic_model:
+  - name: enterprise_addon_support
+    description: >
+      Add-on module for support and ticketing operations. Covers SLA definitions,
+      support cases (tickets) linked to parties and products, and the interaction
+      log recording every communication on a case. Supports customer support,
+      IT help desk, and internal service desk use cases.
+    ai_context:
+      instructions: >
+        Use this model for support operations analytics: case volume, resolution
+        time, SLA compliance, and agent performance.
+
+        Data flow:
+          party (customer/employee) -> support_case -> case_interaction
+          product -> support_case (optional: which product the case is about)
+          sla -> support_case
+
+        Key time metrics:
+          first_response_time = first_response_date - created_date
+          resolution_time = resolved_date - created_date
+
+        SLA compliance: compare actual times to sla.first_response_hours
+        and sla.resolution_hours.
+
+        To get case assignee name, join support_case.assigned_to_employee_id
+        to enterprise_hr.employee (cross-file).
+
+        To get party (customer) name and contact, join support_case.party_id
+        to enterprise_core.party.
+
+        Load enterprise_core.yaml and enterprise_hr.yaml alongside this file
+        for full cross-file resolution.
+
+    datasets:
+
+      # -----------------------------------------------------------------------
+      # SLA — service level agreement definition
+      # -----------------------------------------------------------------------
+      - name: sla
+        source: enterprise.support.sla
+        primary_key: [sla_id]
+        unique_keys:
+          - [sla_id]
+          - [sla_code]
+        description: >
+          Defines the response and resolution time commitments for support cases
+          under a given service tier. Cases are assigned an SLA at creation,
+          and actual times are measured against the thresholds defined here.
+        ai_context:
+          synonyms:
+            - "service level"
+            - "support tier"
+            - "SLA tier"
+            - "response commitment"
+        fields:
+          - name: sla_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: sla_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: sla_code
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: sla_code
+            description: Unique code (e.g., 'SLA-P1', 'SLA-GOLD', 'SLA-STANDARD').
+            dimension:
+              is_time: false
+
+          - name: sla_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: sla_name
+            description: Display name of the SLA tier (e.g., 'Platinum', 'Gold', 'Standard').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "tier name"
+                - "SLA name"
+
+          - name: tier_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: tier_name
+            description: >
+              Priority tier label for this SLA.
+              Values: critical, high, standard, basic.
+            dimension:
+              is_time: false
+
+          - name: first_response_hours
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: first_response_hours
+            description: Maximum hours from case creation to first agent response as required by this SLA.
+            ai_context:
+              synonyms:
+                - "response time"
+                - "time to first response"
+                - "FRT target"
+
+          - name: resolution_hours
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: resolution_hours
+            description: Maximum hours from case creation to resolution as required by this SLA.
+            ai_context:
+              synonyms:
+                - "time to resolution"
+                - "TTR target"
+                - "resolution target"
+
+      # -----------------------------------------------------------------------
+      # SUPPORT_CASE — a single support ticket or service request
+      # -----------------------------------------------------------------------
+      - name: support_case
+        source: enterprise.support.support_case
+        primary_key: [case_id]
+        unique_keys:
+          - [case_id]
+          - [case_number]
+        description: >
+          A single support case (ticket) raised by or on behalf of a party.
+          Tracks the full lifecycle from creation through resolution and closure,
+          including SLA timestamps and the assigned support agent.
+        ai_context:
+          synonyms:
+            - "ticket"
+            - "case"
+            - "support ticket"
+            - "incident"
+            - "service request"
+            - "help desk ticket"
+        fields:
+          - name: case_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: case_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: case_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: case_number
+            description: Human-readable ticket number shown to customers (e.g., 'CASE-2024-08912').
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "ticket number"
+                - "case ID"
+
+          - name: party_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_id
+            description: Foreign key to enterprise_core.party. The customer or person who opened this case.
+            dimension:
+              is_time: false
+
+          - name: product_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_id
+            description: Foreign key to enterprise_core.product. The product or service this case is about. May be NULL.
+            dimension:
+              is_time: false
+
+          - name: sla_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: sla_id
+            description: Foreign key to sla. The SLA tier under which this case is governed.
+            dimension:
+              is_time: false
+
+          - name: subject
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: subject
+            description: Brief one-line description of the case issue.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "title"
+                - "summary"
+                - "issue"
+
+          - name: case_status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: case_status
+            description: >
+              Current lifecycle status.
+              Values: open, in-progress, pending-customer, pending-internal,
+              resolved, closed.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "status"
+                - "ticket status"
+
+          - name: priority
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: priority
+            description: >
+              Case urgency.
+              Values: critical, high, medium, low.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "severity"
+                - "urgency"
+
+          - name: created_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: created_date
+            description: Date and time the case was created (ISO 8601 date-time).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "opened date"
+                - "submission date"
+
+          - name: first_response_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: first_response_date
+            description: Date and time of the first agent response to the customer (ISO 8601). NULL until responded.
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "first reply"
+                - "initial response"
+
+          - name: resolved_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: resolved_date
+            description: Date and time the issue was resolved (ISO 8601). NULL for open cases.
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "resolution date"
+                - "fix date"
+
+          - name: closed_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: closed_date
+            description: Date and time the case was formally closed (ISO 8601). NULL for unresolved cases.
+            dimension:
+              is_time: true
+
+          - name: assigned_to_employee_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: assigned_to_employee_id
+            description: Foreign key to enterprise_hr.employee (cross-file). The support agent or team lead assigned to this case.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "agent"
+                - "assignee"
+                - "case owner"
+
+      # -----------------------------------------------------------------------
+      # CASE_INTERACTION — a single communication event on a support case
+      # -----------------------------------------------------------------------
+      - name: case_interaction
+        source: enterprise.support.case_interaction
+        primary_key: [interaction_id]
+        unique_keys:
+          - [interaction_id]
+        description: >
+          Logs every communication or action taken on a support case: emails,
+          phone calls, chat messages, internal notes, and escalations. Provides
+          a full audit trail of case activity.
+        ai_context:
+          synonyms:
+            - "interaction"
+            - "communication"
+            - "reply"
+            - "note"
+            - "log entry"
+        fields:
+          - name: interaction_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: interaction_id
+            description: Surrogate primary key.
+            dimension:
+              is_time: false
+
+          - name: case_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: case_id
+            description: Foreign key to support_case.
+            dimension:
+              is_time: false
+
+          - name: interaction_type
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: interaction_type
+            description: >
+              Channel or nature of the interaction.
+              Values: email, phone, chat, note, escalation, status-change.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms:
+                - "channel"
+                - "communication type"
+
+          - name: direction
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: direction
+            description: >
+              Flow direction of the interaction.
+              Values: inbound (from customer), outbound (from agent), internal.
+            dimension:
+              is_time: false
+
+          - name: employee_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: employee_id
+            description: Foreign key to enterprise_hr.employee (cross-file). The agent who performed the interaction. NULL for automated interactions.
+            dimension:
+              is_time: false
+
+          - name: party_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: party_id
+            description: Foreign key to enterprise_core.party. The customer party involved in this interaction (if applicable).
+            dimension:
+              is_time: false
+
+          - name: interaction_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: interaction_date
+            description: Date and time the interaction occurred (ISO 8601 date-time).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms:
+                - "timestamp"
+                - "activity date"
+
+    # -------------------------------------------------------------------------
+    # RELATIONSHIPS
+    # -------------------------------------------------------------------------
+    relationships:
+      - name: support_case_to_sla
+        from: support_case
+        to: sla
+        from_columns: [sla_id]
+        to_columns: [sla_id]
+        ai_context:
+          synonyms:
+            - "case governed by SLA"
+
+      - name: case_interaction_to_support_case
+        from: case_interaction
+        to: support_case
+        from_columns: [case_id]
+        to_columns: [case_id]
+        ai_context:
+          synonyms:
+            - "interaction on case"
+
+    # -------------------------------------------------------------------------
+    # METRICS
+    # -------------------------------------------------------------------------
+    metrics:
+      - name: open_case_count
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(CASE WHEN support_case.case_status NOT IN ('resolved', 'closed')
+                           THEN 1 END)
+        description: Number of currently open (unresolved) support cases.
+        ai_context:
+          synonyms:
+            - "open tickets"
+            - "backlog"
+            - "open cases"
+
+      - name: avg_first_response_hours
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                AVG(
+                  CASE WHEN support_case.first_response_date IS NOT NULL
+                       THEN (CAST(support_case.first_response_date AS FLOAT)
+                             - CAST(support_case.created_date AS FLOAT)) * 24
+                       END
+                )
+        description: Average hours between case creation and first agent response.
+        ai_context:
+          synonyms:
+            - "average first response time"
+            - "FRT"
+            - "time to first response"
+
+      - name: avg_resolution_hours
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                AVG(
+                  CASE WHEN support_case.resolved_date IS NOT NULL
+                       THEN (CAST(support_case.resolved_date AS FLOAT)
+                             - CAST(support_case.created_date AS FLOAT)) * 24
+                       END
+                )
+        description: Average hours from case creation to resolution for resolved cases.
+        ai_context:
+          synonyms:
+            - "mean time to resolution"
+            - "MTTR"
+            - "average resolution time"
+
+      - name: sla_compliance_rate
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                COUNT(
+                  CASE WHEN support_case.resolved_date IS NOT NULL
+                         AND (CAST(support_case.resolved_date AS FLOAT)
+                              - CAST(support_case.created_date AS FLOAT)) * 24
+                              <= sla.resolution_hours
+                       THEN 1 END
+                ) * 100.0
+                / NULLIF(COUNT(CASE WHEN support_case.resolved_date IS NOT NULL THEN 1 END), 0)
+        description: Percentage of resolved cases that met their SLA resolution time target.
+        ai_context:
+          synonyms:
+            - "SLA met rate"
+            - "SLA adherence"
+            - "on-time resolution"
