@@ -1,0 +1,197 @@
+flowchart LR
+  subgraph addon_compliance [Compliance]
+    addon_compliance__regulation["regulation"]
+    addon_compliance__control["control"]
+    addon_compliance__audit_event["audit_event"]
+    addon_compliance__risk["risk"]
+  end
+
+  subgraph addon_inventory [Inventory]
+    addon_inventory__inventory_location["inventory_location"]
+    addon_inventory__inventory_balance["inventory_balance"]
+    addon_inventory__inventory_transaction["inventory_transaction"]
+  end
+
+  subgraph addon_manufacturing [Manufacturing]
+    addon_manufacturing__bill_of_materials["bill_of_materials"]
+    addon_manufacturing__bom_line["bom_line"]
+    addon_manufacturing__work_center["work_center"]
+    addon_manufacturing__work_order["work_order"]
+  end
+
+  subgraph addon_projects [Projects]
+    addon_projects__project["project"]
+    addon_projects__project_task["project_task"]
+    addon_projects__project_resource["project_resource"]
+  end
+
+  subgraph addon_sites [Sites]
+    addon_sites__site_type["site_type"]
+    addon_sites__site["site"]
+  end
+
+  subgraph addon_support [Support]
+    addon_support__sla["sla"]
+    addon_support__support_case["support_case"]
+    addon_support__case_interaction["case_interaction"]
+  end
+
+  subgraph enterprise_core [Core]
+    enterprise_core__party["party"]
+    enterprise_core__legal_entity["legal_entity"]
+    enterprise_core__address["address"]
+    enterprise_core__party_address["party_address"]
+    enterprise_core__contact_point["contact_point"]
+    enterprise_core__currency["currency"]
+    enterprise_core__calendar_date["calendar_date"]
+    enterprise_core__product_category["product_category"]
+    enterprise_core__product["product"]
+    enterprise_core__price_list["price_list"]
+    enterprise_core__product_price["product_price"]
+  end
+
+  subgraph enterprise_finance [Finance]
+    enterprise_finance__gl_account["gl_account"]
+    enterprise_finance__cost_center["cost_center"]
+    enterprise_finance__fiscal_period["fiscal_period"]
+    enterprise_finance__journal_entry["journal_entry"]
+    enterprise_finance__journal_line["journal_line"]
+    enterprise_finance__budget["budget"]
+    enterprise_finance__invoice["invoice"]
+    enterprise_finance__invoice_line["invoice_line"]
+    enterprise_finance__payment["payment"]
+  end
+
+  subgraph enterprise_hr [HR]
+    enterprise_hr__employee["employee"]
+    enterprise_hr__department["department"]
+    enterprise_hr__job["job"]
+    enterprise_hr__position["position"]
+    enterprise_hr__employee_assignment["employee_assignment"]
+    enterprise_hr__payroll_record["payroll_record"]
+  end
+
+  subgraph enterprise_marketing [Marketing]
+    enterprise_marketing__campaign["campaign"]
+    enterprise_marketing__campaign_response["campaign_response"]
+    enterprise_marketing__market_segment["market_segment"]
+    enterprise_marketing__party_segment["party_segment"]
+  end
+
+  subgraph enterprise_procurement [Procurement]
+    enterprise_procurement__supplier["supplier"]
+    enterprise_procurement__purchase_order["purchase_order"]
+    enterprise_procurement__purchase_order_line["purchase_order_line"]
+    enterprise_procurement__contract["contract"]
+  end
+
+  subgraph enterprise_sales [Sales]
+    enterprise_sales__sales_territory["sales_territory"]
+    enterprise_sales__customer["customer"]
+    enterprise_sales__lead["lead"]
+    enterprise_sales__opportunity["opportunity"]
+    enterprise_sales__sales_order["sales_order"]
+    enterprise_sales__sales_order_line["sales_order_line"]
+  end
+
+  %% intra-domain relationships
+  addon_compliance__control --> addon_compliance__regulation
+  addon_compliance__audit_event --> addon_compliance__control
+  addon_compliance__risk --> addon_compliance__control
+  addon_inventory__inventory_balance --> addon_inventory__inventory_location
+  addon_inventory__inventory_transaction --> addon_inventory__inventory_location
+  addon_manufacturing__bom_line --> addon_manufacturing__bill_of_materials
+  addon_manufacturing__work_order --> addon_manufacturing__bill_of_materials
+  addon_manufacturing__work_order --> addon_manufacturing__work_center
+  addon_projects__project_task --> addon_projects__project
+  addon_projects__project_task --> addon_projects__project_task
+  addon_projects__project_resource --> addon_projects__project
+  addon_sites__site --> addon_sites__site_type
+  addon_support__support_case --> addon_support__sla
+  addon_support__case_interaction --> addon_support__support_case
+  enterprise_core__party_address --> enterprise_core__party
+  enterprise_core__party_address --> enterprise_core__address
+  enterprise_core__contact_point --> enterprise_core__party
+  enterprise_core__legal_entity --> enterprise_core__legal_entity
+  enterprise_core__product --> enterprise_core__product_category
+  enterprise_core__product_category --> enterprise_core__product_category
+  enterprise_core__product_price --> enterprise_core__product
+  enterprise_core__product_price --> enterprise_core__price_list
+  enterprise_core__price_list --> enterprise_core__currency
+  enterprise_finance__journal_entry --> enterprise_finance__fiscal_period
+  enterprise_finance__journal_line --> enterprise_finance__journal_entry
+  enterprise_finance__journal_line --> enterprise_finance__gl_account
+  enterprise_finance__journal_line --> enterprise_finance__cost_center
+  enterprise_finance__budget --> enterprise_finance__gl_account
+  enterprise_finance__budget --> enterprise_finance__fiscal_period
+  enterprise_finance__budget --> enterprise_finance__cost_center
+  enterprise_finance__invoice_line --> enterprise_finance__invoice
+  enterprise_finance__invoice_line --> enterprise_finance__gl_account
+  enterprise_finance__payment --> enterprise_finance__invoice
+  enterprise_hr__employee_assignment --> enterprise_hr__employee
+  enterprise_hr__employee_assignment --> enterprise_hr__position
+  enterprise_hr__employee_assignment --> enterprise_hr__department
+  enterprise_hr__employee_assignment --> enterprise_hr__employee
+  enterprise_hr__position --> enterprise_hr__department
+  enterprise_hr__position --> enterprise_hr__job
+  enterprise_hr__payroll_record --> enterprise_hr__employee
+  enterprise_marketing__campaign_response --> enterprise_marketing__campaign
+  enterprise_marketing__party_segment --> enterprise_marketing__market_segment
+  enterprise_procurement__purchase_order --> enterprise_procurement__supplier
+  enterprise_procurement__purchase_order_line --> enterprise_procurement__purchase_order
+  enterprise_sales__customer --> enterprise_sales__sales_territory
+  enterprise_sales__opportunity --> enterprise_sales__customer
+  enterprise_sales__opportunity --> enterprise_sales__lead
+  enterprise_sales__sales_order --> enterprise_sales__customer
+  enterprise_sales__sales_order --> enterprise_sales__opportunity
+  enterprise_sales__sales_order --> enterprise_sales__sales_territory
+  enterprise_sales__sales_order_line --> enterprise_sales__sales_order
+  enterprise_sales__sales_territory --> enterprise_sales__sales_territory
+
+  %% cross-domain references
+  addon_compliance__control -.-> enterprise_hr__employee
+  addon_compliance__audit_event -.-> enterprise_hr__employee
+  addon_inventory__inventory_balance -.-> enterprise_core__product
+  addon_inventory__inventory_transaction -.-> enterprise_core__product
+  addon_manufacturing__bill_of_materials -.-> enterprise_core__product
+  addon_manufacturing__bom_line -.-> enterprise_core__product
+  addon_projects__project -.-> enterprise_sales__customer
+  addon_projects__project -.-> enterprise_core__legal_entity
+  addon_projects__project_task -.-> enterprise_hr__employee
+  addon_projects__project_resource -.-> enterprise_hr__employee
+  addon_sites__site -.-> enterprise_core__address
+  addon_sites__site -.-> enterprise_core__legal_entity
+  addon_support__support_case -.-> enterprise_core__party
+  addon_support__support_case -.-> enterprise_core__product
+  addon_support__support_case -.-> enterprise_hr__employee
+  addon_support__case_interaction -.-> enterprise_hr__employee
+  addon_support__case_interaction -.-> enterprise_core__party
+  enterprise_finance__gl_account -.-> enterprise_core__legal_entity
+  enterprise_finance__cost_center -.-> enterprise_core__legal_entity
+  enterprise_finance__cost_center -.-> enterprise_hr__department
+  enterprise_finance__fiscal_period -.-> enterprise_core__legal_entity
+  enterprise_finance__journal_entry -.-> enterprise_core__legal_entity
+  enterprise_finance__journal_entry -.-> enterprise_hr__employee
+  enterprise_finance__invoice -.-> enterprise_core__legal_entity
+  enterprise_finance__invoice -.-> enterprise_core__party
+  enterprise_finance__invoice_line -.-> enterprise_core__product
+  enterprise_hr__employee -.-> enterprise_core__party
+  enterprise_hr__employee -.-> enterprise_core__legal_entity
+  enterprise_hr__department -.-> enterprise_finance__cost_center
+  enterprise_hr__payroll_record -.-> enterprise_core__legal_entity
+  enterprise_marketing__campaign_response -.-> enterprise_core__party
+  enterprise_marketing__party_segment -.-> enterprise_core__party
+  enterprise_procurement__supplier -.-> enterprise_core__party
+  enterprise_procurement__supplier -.-> enterprise_core__legal_entity
+  enterprise_procurement__purchase_order -.-> enterprise_core__legal_entity
+  enterprise_procurement__purchase_order_line -.-> enterprise_core__product
+  enterprise_procurement__contract -.-> enterprise_core__party
+  enterprise_procurement__contract -.-> enterprise_core__legal_entity
+  enterprise_sales__customer -.-> enterprise_core__party
+  enterprise_sales__customer -.-> enterprise_core__legal_entity
+  enterprise_sales__lead -.-> enterprise_core__party
+  enterprise_sales__lead -.-> enterprise_marketing__campaign
+  enterprise_sales__lead -.-> enterprise_hr__employee
+  enterprise_sales__opportunity -.-> enterprise_hr__employee
+  enterprise_sales__sales_order -.-> enterprise_core__legal_entity
+  enterprise_sales__sales_order_line -.-> enterprise_core__product
